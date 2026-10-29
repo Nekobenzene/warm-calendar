@@ -35,7 +35,8 @@
 - `verification/tests-0.5-final.log`：完整80项Flutter测试全部通过。包含真实HTTP双客户端同步、SQLite事务回滚、颜色/重复/提醒旧回归；新15项覆盖主题全色相对比度、背景像素渲染/清除、手机详情避让/选中、滚轮及触摸上下滚动交接、跨日边界全宽预览、1分钟/锁旁注、错误toast和2027—2050离线历法。预期失败注入日志及双独立数据库debug提示不代表测试失败。
 - 最终修正后 `verification/tests-0.5-final-fixes.log`：29项相关回归通过（本轮19项＋手机布局4项＋日历交互6项）。额外涵盖背景导入缩放/坏图、整页滚轮边缘反馈、末端时间点的正常/减少动画两种模式；不为局部修复重复整套无关测试。实际浏览器发现旧ImageDescriptor尺寸接口在Web不可用，已统一为instantiateImageCodecWithSize，最终构建实际导入成功。
 - `verification/analyze-0.5-final.log`：No issues found。`verification/build-web-0.5.log`：release成功，字体与渲染资源随包。服务端本轮无改，上一轮9项Node测试适用，无重复执行。
-- 新两端版本、文件大小/哈希与签名状态见 `dist/release-0.5.0.json`。安装EXE `dist/日程表-Setup-0.5.0-x64.exe`；完整Windows目录 `dist/日程表Windows-0_5_0`及同名ZIP；APK `dist/日程表-Android-0.5.0.apk`与通用名 `日程表-Android.apk`一致。
+- 初次构建清单已归档为 `dist/archive/2026-10-29/release-0.5.0.json`，其中记录的是归档前路径。完整Windows构建及旧名APK也在该归档目录。当前正式安装包在 `dist/releases/0.5.0/`，采用 `warm-calendar-0.5.0-windows-x64-setup.exe`、`warm-calendar-0.5.0-android.apk`统一名称，并附SHA256SUMS.txt。
+- GitHub Release https://github.com/Nekobenzene/warm-calendar/releases/tag/v0.5.0 已正式发布并设为latest。两个安装包及校验文件均逐一核对GitHub资产SHA256与本地一致。本机安装的data/app.so也与已发布Windows构建逐字节哈希一致，已正常启动进入设置页。
 - 0.5.0初次构建未覆盖运行中的旧便携版；随后用户退出应用后已用同一安装向导升级本机，并归档旧目录，见上方发布记录。Android沿用原密钥覆盖安装，勿先卸载。
 - 实际浏览器布局与截图记录见 `verification/visual-0.5.md`，隔离端口4181/4182，不向正式4173写测试事项。无连接Android真机，系统横幅/声音/振动、多指与厂商后台策略未宣称实机通过；模拟手势及原生通知参数有测试。
 - Windows仍无正规代码签名证书，应用/安装器无受信任签名；不调整智能应用控制或杀毒。用户此前反馈现有环境通知正常，不等于签名问题已解决。
