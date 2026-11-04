@@ -1,6 +1,36 @@
 # 日程表交接
 
-更新于2026-11-04。项目 `D:\projects\日程表`，Flutter/Dart，Git主分支main，远端为 https://github.com/Nekobenzene/warm-calendar 。当前正式源码为0.6.0+7。历史记录存于 `verification/HANDOFF-before-0.5.md`，其中旧限制不代表当前状态。界面规范见 `DESIGN.md`，数据来源见 `THIRD_PARTY.md`。
+更新于2026-11-04。项目 `D:\projects\日程表`，Flutter/Dart，Git主分支main，远端为 https://github.com/Nekobenzene/warm-calendar 。当前正式版本0.7.0+9。历史记录存于 `verification/HANDOFF-before-0.5.md`，其中旧限制不代表当前状态。界面规范见 `DESIGN.md`，数据来源见 `THIRD_PARTY.md`。
+
+## 本轮0.7.0正式发布与本机更新
+
+用户已验收预览并明确授权发布、同时更新本机。pubspec.yaml和lib/version.dart改为正式0.7.0，Android构建号9；正式版沿用原包名/数据/连接/通知身份/4280服务。预览仍可保留，数据不自动迁移。
+
+- 正式产物仅Windows安装向导、Android APK和SHA256SUMS.txt，位于`dist/releases/0.7.0/`。发布说明`releases/0.7.0.md`，目标标签v0.7.0及main，发布入口 https://github.com/Nekobenzene/warm-calendar/releases/tag/v0.7.0 。构建见`verification/build-windows-0.7-release.log`、`build-installer-0.7-release.log`、`build-android-0.7-release.log`。
+- 预览业务测试沿用下文记录；正式版本切换后仅重跑5项更新模块测试，`tests-0.7-release.log`全部通过。测试固定旧版本0.6.0，避免依赖当前应用版本导致未来发布时失效。`analyze-0.7-release.log`无问题。APK实际包名`com.tangtang.warm_calendar`、版本0.7.0/9，证书与历史一致，记录`apk-identity-0.7-release.log`、`apk-signature-0.7-release.log`。
+- 本机已安装到原`%LOCALAPPDATA%/Programs/WarmCalendar`，保留原快捷方式、自启动选择和用户数据库，安装成功后自动重新运行，无需重启Windows。`installed-official-0.7.json`核对exe为0.7.0+9且与构建相同，同步服务脚本亦与源码哈希一致。
+- 实际升级发现旧后台同步服务独立运行，原安装器仅匹配反斜杠路径，未匹配Dart参数中的正斜杠，导致node.exe被占用，首次安装失败并记录于`install-official-0.7.log`。已在`StopInstalledRelay`统一可执行路径/命令行的分隔符；仍须同时精确匹配安装目录的node.exe和本目录server.mjs，仅停止本应用服务，不关闭其他Node程序。重编安装器后实际终止目标服务PID30208并安装成功，见`install-official-0.7-final.log`，结束码0。
+- Windows仍无受信任代码签名；Android真机操作、系统通知及真实自动更新的完整安装流程仍待实机验收。当前验证的是本机用正式安装器从0.6.0升级到0.7.0。
+
+以下为已完成的本地预览阶段记录，其中“未发布”“不覆盖正式版”仅描述当时状态。
+
+## 本轮0.7本地待办预览
+
+用户要求先本地预览，不推送、不发布、不覆盖正式安装。新增`lib/domain/todos.dart`、`lib/ui/todo_editor.dart`、`lib/ui/todos_page.dart`、`test/todos_test.dart`，其余见工作区diff。版本`0.7.0-preview.1+8`沿用独立Preview数据库、凭据、通知身份、4281服务和Android包名；可覆盖旧预览，与0.6正式版并存，数据不自动迁入正式版。
+
+- 导航在日程后加待办，手机底栏六项。首页紧凑待办区含未完成/逾期数、新增/查看、当前排序首条未完成任务。查看弹窗按同序列出全部任务，可快捷完成/删除，点击转待办页并440ms缓动定位、高亮。
+- 待办编辑名称、备注、可选截止时间、未完成/已完成RGBA颜色。创建时间不可变；重要程度持久化为序列，新建附在尾部。无截止任务不参与日程/提醒/日历，有截止则投影为点型线标签，可拖动改截止、编辑/删除，无边界手柄。
+- 四子页：未完成（含逾期）、已完成、已逾期、全部；创建/重要程度/截止各正反序。截止正序无日期项末尾，倒序严格反转。多选批处理原子保存，混合完成状态禁用完成/恢复。重要排序且未完成/逾期页支持桌面拖动开关、手机长按及边缘自动滚动。重排替换可见任务槽位，保留隐藏任务位置；失败不改内存。排序偏好仅本机保存，重要顺序随任务同步。
+- 日程/待办排序箭头共用`SortDirectionIcon`，200ms easeInOutCubic旋转180度，连续切换从当前位置平滑返回，减少动画时立即切换。
+- 独立待办过期自动完成与日程开关共同同步。旧端省略新字段时保留设置。服务自动迁移增加列；新请求带`supportsTodos:true`，旧客户端响应过滤待办但继续推进游标，防止误读为日程。旧服务没有这些能力，联调请两端都用本轮预览及随包服务。
+- 复用`ScheduleEvent` JSON/SQLite事件表、备份和outbox，增加`isTodo/hasDeadline/taskCreatedAt/todoOrder`，待办必须零时长、无全天/重复/提醒。旧记录兼容，前台和Android后台提醒显式过滤待办。
+- 日历选中名称/备注各一行，超长省略。翻页目标立即累加，动画追到最新目标，中途页面不反写目标，版本号守卫防旧Future覆盖新状态；距离决定180—700ms缓动，减少动画直接切换。
+
+验证：`tests-todos-0.7-final.log`17项通过，含六种排序/持久化、批量状态、1.6倍字、首页弹窗跳第35项、实际桌面/手机重排和边缘滚动、日历拖截止、月/周快速前后各十次（父组件回传日期）、箭头动画中途与返回。`tests-ui-0.7-final.log`21项包含前版15项待办和6项日历交互，与最终待办重叠勿相加。`tests-sync-0.7-final.log`6项通过，含真实HTTP双端待办字段/顺序/完成及共享设置。提醒用例已在`tests-0.7.log`通过；该首次组合日志唯一失败为旧备注仅一处断言，已限定底部详情重跑通过。`sync-server-0.7.log`11项通过；静态检查见`analyze-0.7-final.log`。
+
+渲染：独立4184网页检查1280×800首页（一页无滚动）、390×844待办和编辑器，未上传文件，截图`verification/preview-07-mobile-empty.png`。浏览器自动输入仅改变语义层未传到Flutter，故未宣称网页创建成功；创建与跳转由widget真实交互测试验证。Windows独立预览实际启动显示，正式进程/目录未动。未做Android真机验收。Windows仍未取得受信任代码签名；APK公开证书SHA256保持`fe006cfdf4c4bb284b7ecfd7c6ba47572329bc5d335811fd337f63b63ef733ed`。
+
+产物`dist/previews/0.7.0-preview.1/`：Windows安装器、完整`windows/`及zip、APK、SHA256SUMS.txt和预览说明。最终构建见`build-windows-0.7-final.log`、`package-windows-0.7-final.log`、`build-installer-0.7-final.log`、`build-android-0.7-final.log`。用户已保存并退出预览后更新独立安装，`install-preview-0.7.log`成功且无需重启；`installed-preview-0.7.json`核对安装版本`0.7.0-preview.1+8`、exe与交付包哈希一致，正式仍`0.6.0+7`。开始菜单“日程表-本地预览”已更新，应用已重新打开，实际截图`preview-07-desktop.png`。未新增桌面图标或开启自启动。复现构建同下方0.6流程，输出目录换0.7。运行中的预览目录不可覆盖，须先保存并从预览托盘退出，正式0.6无需退出。本轮尚未提交或发布。
 
 ## 本轮0.6.0正式发布与本机升级
 

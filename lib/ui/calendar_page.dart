@@ -66,6 +66,8 @@ class CalendarPageState extends State<CalendarPage>
   String? _selectedId, _selectionBlock, _axisDate;
   ScheduleEvent? _dragging;
   Timer? _dragAutoTimer;
+  int _navigationRevision = 0;
+  bool _navigating = false;
   Offset? _dragPointer;
   CalendarEditMode _editMode = CalendarEditMode.move;
   Offset _dragOffset = Offset.zero;
@@ -97,8 +99,9 @@ class CalendarPageState extends State<CalendarPage>
             ? d.weekday - 1
             : d.weekday % 7),
   );
-  ScheduleEvent? get _selectedEvent =>
-      widget.controller.events.where((e) => e.id == _selectedId).firstOrNull;
+  ScheduleEvent? get _selectedEvent => widget.controller.calendarEvents
+      .where((e) => e.id == _selectedId)
+      .firstOrNull;
   Duration get _travel => MediaQuery.disableAnimationsOf(context)
       ? Duration.zero
       : const Duration(milliseconds: 440);
@@ -315,7 +318,9 @@ class CalendarPageState extends State<CalendarPage>
     }
     _linkingScroll = false;
     final day = _dayAt((_daysScroll.offset / _dayWidth + .00001).floor());
-    if (!sameDay(day, _firstVisible)) setState(() => _firstVisible = day);
+    if (!_navigating && !sameDay(day, _firstVisible)) {
+      setState(() => _firstVisible = day);
+    }
     if (_popover != null) unawaited(_hidePopover());
   }
 
@@ -327,7 +332,9 @@ class CalendarPageState extends State<CalendarPage>
     );
     _linkingScroll = false;
     final day = _dayAt((_daysScroll.offset / _dayWidth + .00001).floor());
-    if (!sameDay(day, _firstVisible)) setState(() => _firstVisible = day);
+    if (!_navigating && !sameDay(day, _firstVisible)) {
+      setState(() => _firstVisible = day);
+    }
   }
 
   void _selectDate(DateTime day) {
@@ -657,7 +664,7 @@ class CalendarPageState extends State<CalendarPage>
         entireSeries: entire,
       );
       widget.onSelectionChanged?.call(_selectedEvent);
-      if (mounted) showMessage(context, '日程时间已更新');
+      if (mounted) showMessage(context, event.isTodo ? '待办截止时间已更新' : '日程时间已更新');
     } catch (e) {
       if (mounted) {
         showMessage(
@@ -768,18 +775,23 @@ class CalendarPageState extends State<CalendarPage>
   Future<void> _goTo(DateTime day) async {
     clearSelection();
     if (day.year < 1901 || day.year > 2099) return;
-    _focusDate = dayOnly(day);
+    final revision = ++_navigationRevision;
+    _navigating = true;
+    setState(() => _focusDate = dayOnly(day));
     widget.onSelect(_focusDate);
     if (_view == CalendarView.month) {
       _monthDate = DateTime(day.year, day.month);
       if (_months.hasClients) {
         await _months.animateToPage(
           _monthIndex(day),
-          duration: _travel,
+          duration: _navigationDuration(
+            (_monthIndex(day) - (_months.page ?? _monthIndex(day)))
+                .abs()
+                .toDouble(),
+          ),
           curve: Curves.easeInOutCubic,
         );
       }
-      if (mounted) setState(() {});
     } else {
       final target = _view == CalendarView.week
           ? _weekStart(day)
@@ -791,13 +803,31 @@ class CalendarPageState extends State<CalendarPage>
             0,
             _daysScroll.position.maxScrollExtent,
           ),
-          duration: _travel,
+          duration: _navigationDuration(
+            ((_dayIndex(target) * _dayWidth) - _daysScroll.offset).abs() /
+                math.max(1, _daysScroll.position.viewportDimension),
+          ),
           curve: Curves.easeInOutCubic,
         );
       }
-      if (mounted) setState(() => _axisDate = null);
+    }
+    if (mounted && revision == _navigationRevision) {
+      setState(() {
+        _navigating = false;
+        _axisDate = null;
+      });
     }
   }
+
+  Duration _navigationDuration(double distance) =>
+      MediaQuery.disableAnimationsOf(context)
+      ? Duration.zero
+      : Duration(
+          milliseconds: (180 + 260 * math.sqrt(distance)).round().clamp(
+            180,
+            700,
+          ),
+        );
 
   void _move(int delta) {
     final first = _weekStart(_firstVisible);
@@ -814,6 +844,8 @@ class CalendarPageState extends State<CalendarPage>
   }
 
   void _changeView(CalendarView view) {
+    _navigationRevision++;
+    _navigating = false;
     clearSelection();
     setState(() {
       if (_view == CalendarView.month &&
@@ -1054,11 +1086,26 @@ class CalendarPageState extends State<CalendarPage>
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    _selectedEvent!.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _selectedEvent!.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      if (_selectedEvent!.notes.isNotEmpty)
+                        Text(
+                          _selectedEvent!.notes,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.muted,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 TextButton.icon(
@@ -1152,6 +1199,7 @@ class CalendarPageState extends State<CalendarPage>
             controller: _months,
             itemCount: 199 * 12,
             onPageChanged: (index) {
+              if (_navigating) return;
               final month = _monthAt(index);
               if (!sameDay(month, _monthDate)) {
                 setState(() => _monthDate = month);

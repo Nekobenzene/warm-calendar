@@ -36,11 +36,15 @@ class SqliteSyncStore implements SyncStore {
         .get();
     if (rows.isEmpty) {
       final settings = await SqliteScheduleRepository(db).loadSettings();
-      if (settings.autoCompleteExpired) {
+      if (settings.autoCompleteExpired || settings.autoCompleteTodos) {
         await db.customStatement(
           'INSERT INTO shared_settings(id,payload,dirty) VALUES (1,?,1)',
           [
-            jsonEncode({'autoCompleteExpired': true, 'changeId': 'migration'}),
+            jsonEncode({
+              'autoCompleteExpired': settings.autoCompleteExpired,
+              'autoCompleteTodos': settings.autoCompleteTodos,
+              'changeId': 'migration',
+            }),
           ],
         );
       }
@@ -76,19 +80,37 @@ class SqliteSyncStore implements SyncStore {
     if (dirty != null) return false;
     final settings = await SqliteScheduleRepository(db).loadSettings();
     final value = remote['autoCompleteExpired'] as bool;
-    if (settings.autoCompleteExpired != value) {
+    final todoValue = remote['autoCompleteTodos'] is bool
+        ? remote['autoCompleteTodos'] as bool
+        : settings.autoCompleteTodos;
+    final changed =
+        settings.autoCompleteExpired != value ||
+        settings.autoCompleteTodos != todoValue;
+    if (changed) {
       await db.customStatement(
         'INSERT OR REPLACE INTO settings(id,payload) VALUES (1,?)',
-        [jsonEncode(settings.copyWith(autoCompleteExpired: value).toJson())],
+        [
+          jsonEncode(
+            settings
+                .copyWith(
+                  autoCompleteExpired: value,
+                  autoCompleteTodos: todoValue,
+                )
+                .toJson(),
+          ),
+        ],
       );
     }
     await db.customStatement(
       'INSERT OR REPLACE INTO shared_settings(id,payload,dirty) VALUES (1,?,0)',
       [
-        jsonEncode({'autoCompleteExpired': value}),
+        jsonEncode({
+          'autoCompleteExpired': value,
+          'autoCompleteTodos': todoValue,
+        }),
       ],
     );
-    return settings.autoCompleteExpired != value;
+    return changed;
   });
   @override
   Future<({String? groupId, int cursor})> position() async {

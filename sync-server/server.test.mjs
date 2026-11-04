@@ -11,6 +11,25 @@ const event = (id = 'event', extra = {}) => ({ id, title: '同步测试', notes:
   reminderOffsets: [10, 0], reminderSound: true, color: 0x80e4ead9,
   completedColor: 0xffe2e3df, ...extra });
 
+test('待办字段、排序和自动完成同步，旧客户端不误读待办', async t => {
+  const { call, register, pair } = await fixture(t);
+  const desktop = await register(), phone = await register('android');
+  await pair(desktop, phone);
+  const task = event('task', { isTodo: true, hasDeadline: false, taskCreatedAt: '2026-11-04T00:00:00Z', todoOrder: 4, start: '2026-11-04T00:00:00Z', end: '2026-11-04T00:00:00Z', reminderOffsets: [] });
+  await call('/v1/sync', desktop.credential, { events: [task], cursor: 0, supportsTodos: true, settings: { autoCompleteExpired: false, autoCompleteTodos: true } });
+  const result = await call('/v1/sync', phone.credential, { events: [], cursor: 0, supportsTodos: true });
+  assert.deepEqual(result.events, [task]);
+  assert.equal(result.settings.autoCompleteTodos, true);
+  const old = await call('/v1/sync', phone.credential, { events: [], cursor: 0, settings: { autoCompleteExpired: true } });
+  assert.equal(old.events.length, 0); assert.ok(old.cursor > 0);
+  const kept = await call('/v1/sync', desktop.credential, { events: [], cursor: 0, supportsTodos: true });
+  assert.deepEqual(kept.settings, { autoCompleteExpired: true, autoCompleteTodos: true });
+  await call('/v1/sync', desktop.credential, { events: [{ ...task, todoOrder: -1 }], cursor: 0 }, 400);
+  await call('/v1/sync', desktop.credential, { events: [{ ...task, todoOrder: 0, completed: true, deleted: true }], cursor: 0, supportsTodos: true });
+  const removed = await call('/v1/sync', phone.credential, { events: [], cursor: 0, supportsTodos: true });
+  assert.equal(removed.events[0].todoOrder, 0); assert.equal(removed.events[0].deleted, true);
+});
+
 test('稳定安装凭据复用设备，保留配对；改名、解绑和撤销各自生效', async t => {
   const { call, register, pair, app } = await fixture(t);
   const desktop = await register();

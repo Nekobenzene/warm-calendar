@@ -351,6 +351,7 @@ class LinkController extends ChangeNotifier {
         body: {
           'groupId': position.groupId,
           'cursor': position.cursor,
+          'supportsTodos': true,
           'events': pending.map((p) => p.event.toJson()).toList(),
           'settings': ?preferences,
         },

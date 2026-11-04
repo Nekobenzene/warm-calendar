@@ -13,6 +13,8 @@ import 'motion.dart';
 import 'appearance.dart';
 import 'scroll_feedback.dart';
 import 'update_panel.dart';
+import 'todos_page.dart';
+import 'todo_editor.dart';
 
 class AppShell extends StatefulWidget {
   final AppController controller;
@@ -108,15 +110,17 @@ class _AppShellState extends State<AppShell> {
 
   int _page = 0;
   final _calendarKey = GlobalKey<CalendarPageState>();
+  final _todosKey = GlobalKey<TodosPageState>();
   String? _calendarSelection;
   DateTime _selected = dayOnly(DateTime.now());
   ScheduleStatus? _status;
   int _filterRevision = 0;
-  static const _names = ['首页', '日历', '日程', '链接', '设置'];
+  static const _names = ['首页', '日历', '日程', '待办', '链接', '设置'];
   static const _icons = [
     Icons.home_outlined,
     Icons.calendar_month_outlined,
     Icons.checklist_outlined,
+    Icons.task_alt,
     Icons.link,
     Icons.settings_outlined,
   ];
@@ -124,6 +128,13 @@ class _AppShellState extends State<AppShell> {
     _selected = dayOnly(day);
     _page = 1;
   });
+  void _openTodo(String id) {
+    setState(() => _page = 3);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _todosKey.currentState?.focusTask(id);
+    });
+  }
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.controller,
@@ -371,10 +382,12 @@ class _AppShellState extends State<AppShell> {
                                         ?.copyWith(fontSize: narrow ? 20 : 24),
                                   ),
                                   const Spacer(),
-                                  if (_page < 3)
+                                  if (_page < 4)
                                     FilledButton.icon(
                                       onPressed: c.loading || c.error != null
                                           ? null
+                                          : _page == 3
+                                          ? () => openTodoEditor(context, c)
                                           : () => openEventEditor(
                                               context,
                                               c,
@@ -383,7 +396,13 @@ class _AppShellState extends State<AppShell> {
                                                   : null,
                                             ),
                                       icon: const Icon(Icons.add, size: 18),
-                                      label: Text(narrow ? '新建' : '新建日程'),
+                                      label: Text(
+                                        _page == 3
+                                            ? '新增待办'
+                                            : narrow
+                                            ? '新建'
+                                            : '新建日程',
+                                      ),
                                     ),
                                 ],
                               ),
@@ -452,6 +471,7 @@ class _AppShellState extends State<AppShell> {
                                                     child: HomePage(
                                                       controller: c,
                                                       onCalendar: _openCalendar,
+                                                      onTodo: _openTodo,
                                                       onStatus: (status) =>
                                                           setState(() {
                                                             _status = status;
@@ -501,6 +521,15 @@ class _AppShellState extends State<AppShell> {
                                                           _filterRevision,
                                                     ),
                                                   ),
+                                                  Padding(
+                                                    padding: EdgeInsets.all(
+                                                      narrow ? 12 : 28,
+                                                    ),
+                                                    child: TodosPage(
+                                                      key: _todosKey,
+                                                      controller: c,
+                                                    ),
+                                                  ),
                                                   if (c.link == null)
                                                     Padding(
                                                       padding: EdgeInsets.all(
@@ -533,7 +562,7 @@ class _AppShellState extends State<AppShell> {
                                                       controller: c,
                                                       onManageLinks: () =>
                                                           setState(
-                                                            () => _page = 3,
+                                                            () => _page = 4,
                                                           ),
                                                     ),
                                                   ),
@@ -570,7 +599,9 @@ class _AppShellState extends State<AppShell> {
     },
   );
   Widget _calendarDetails(AppController c) {
-    final event = c.events.where((e) => e.id == _calendarSelection).firstOrNull;
+    final event = c.calendarEvents
+        .where((e) => e.id == _calendarSelection)
+        .firstOrNull;
     if (event == null) return const SizedBox.shrink();
     return Container(
       key: const ValueKey('mobile-calendar-details'),

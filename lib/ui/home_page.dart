@@ -6,16 +6,19 @@ import 'components.dart';
 import 'event_editor.dart';
 import 'theme.dart';
 import 'motion.dart';
+import 'todos_page.dart';
 
 class HomePage extends StatelessWidget {
   final AppController controller;
   final void Function(DateTime) onCalendar;
   final void Function(ScheduleStatus) onStatus;
+  final ValueChanged<String>? onTodo;
   const HomePage({
     super.key,
     required this.controller,
     required this.onCalendar,
     required this.onStatus,
+    this.onTodo,
   });
 
   @override
@@ -38,6 +41,10 @@ class HomePage extends StatelessWidget {
           _ClockAndDate(controller: controller),
           const SizedBox(height: 16),
           UpcomingPanel(controller: controller),
+          if (onTodo != null) ...[
+            const SizedBox(height: 12),
+            HomeTodoPanel(controller: controller, onOpen: onTodo!),
+          ],
           const SizedBox(height: 16),
           Row(
             children: [
@@ -295,6 +302,7 @@ class _StatusBoard extends StatelessWidget {
       for (final status in ScheduleStatus.values)
         status: controller
             .onDay(controller.now)
+            .where((e) => !e.isTodo)
             .where((e) => e.statusAt(controller.now) == status)
             .toList(),
     };

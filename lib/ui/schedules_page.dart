@@ -174,10 +174,8 @@ class _SchedulesPageState extends State<SchedulesPage> {
                       ),
                     ),
                   ),
-                  icon: Icon(
-                    c.settings.sortDescending
-                        ? Icons.arrow_downward
-                        : Icons.arrow_upward,
+                  icon: SortDirectionIcon(
+                    descending: c.settings.sortDescending,
                     size: 19,
                   ),
                 ),

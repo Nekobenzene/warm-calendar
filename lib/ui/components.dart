@@ -6,6 +6,26 @@ import 'theme.dart';
 import 'motion.dart';
 import 'toast.dart';
 
+class SortDirectionIcon extends StatelessWidget {
+  final bool descending;
+  final double size;
+  const SortDirectionIcon({
+    super.key,
+    required this.descending,
+    this.size = 24,
+  });
+
+  @override
+  Widget build(BuildContext context) => AnimatedRotation(
+    turns: descending ? .5 : 0,
+    duration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 200),
+    curve: Curves.easeInOutCubic,
+    child: Icon(Icons.arrow_upward, size: size),
+  );
+}
+
 class Surface extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -457,7 +477,7 @@ Future<void> deleteEvent(
   final confirmed = await showAppDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('删除日程'),
+      title: Text(event.isTodo ? '删除待办' : '删除日程'),
       content: Text(
         repeated
             ? '删除“${event.title}”的本次，还是整个重复日程？整个日程包含已完成和已单独修改的各次。'
@@ -487,10 +507,19 @@ Future<void> deleteEvent(
       _showMessage(
         messenger,
         width,
-        confirmed == 'series' ? '整个重复日程已删除' : '日程已删除',
+        confirmed == 'series'
+            ? '整个重复日程已删除'
+            : event.isTodo
+            ? '待办已删除'
+            : '日程已删除',
       );
     } catch (_) {
-      _showMessage(messenger, width, '删除失败，日程已保留，请重试。', error: true);
+      _showMessage(
+        messenger,
+        width,
+        '删除失败，${event.isTodo ? '待办' : '日程'}已保留，请重试。',
+        error: true,
+      );
     }
   }
 }

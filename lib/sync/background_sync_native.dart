@@ -41,7 +41,10 @@ void calendarSyncDispatcher() {
       await notifications.applyDesktopSettings(settings);
       await notifications.reconcile(
         planReminders(
-          resolveEvents(await repository.loadEvents(), calendar),
+          resolveEvents(
+            (await repository.loadEvents()).where((e) => !e.isTodo).toList(),
+            calendar,
+          ),
           settings,
           DateTime.now(),
           limit: 128,

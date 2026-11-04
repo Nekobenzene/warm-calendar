@@ -101,6 +101,7 @@ void main() {
     final gate = Completer<void>();
     final u = AppUpdateController(
       target: 'android',
+      currentVersion: '0.6.0',
       clientFactory: () => MockClient(
         (_) async => http.Response(
           fail ? 'unavailable' : jsonEncode(releaseJson(target: 'android')),

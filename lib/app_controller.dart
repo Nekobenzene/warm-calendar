@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'data/repository.dart';
 import 'domain/calendar_service.dart';
 import 'domain/models.dart';
+import 'domain/todos.dart';
 import 'domain/recurrence.dart';
 import 'domain/reminders.dart';
 import 'domain/holiday_update.dart';
@@ -96,15 +97,69 @@ class AppController extends ChangeNotifier {
     return operation;
   }
 
-  List<ScheduleEvent> get events =>
-      _resolvedEvents ??= resolveEvents(_events, calendar);
+  List<ScheduleEvent> get events => _resolvedEvents ??= resolveEvents(
+    _events.where((e) => !e.isTodo).toList(),
+    calendar,
+  );
+  List<ScheduleEvent> get todos => orderedTodos(_events, settings);
+  List<ScheduleEvent> get allItems => [...events, ...todos];
+  List<ScheduleEvent> get calendarEvents => [
+    ...events,
+    ...todos.where((e) => e.hasDeadline),
+  ];
   ScheduleEvent? seriesFor(ScheduleEvent event) => _events
       .where(
         (e) => e.id == event.seriesId && e.recurrence != null && !e.deleted,
       )
       .firstOrNull;
   List<ScheduleEvent> onDay(DateTime d) =>
-      events.where((e) => e.occursOn(d)).toList();
+      calendarEvents.where((e) => e.occursOn(d)).toList();
+
+  Future<void> changeTodos(
+    Set<String> ids, {
+    bool? completed,
+    bool delete = false,
+  }) => _serialize(() async {
+    final records = todos
+        .where((e) => ids.contains(e.id))
+        .map(
+          (e) =>
+              e.copyWith(completed: completed, deleted: delete ? true : null),
+        )
+        .toList();
+    if (records.isEmpty) return;
+    await _persistEvents(records);
+    await _completeExpired();
+    _notify();
+  });
+
+  Future<void> reorderTodos(List<String> visibleOrder) => _serialize(() async {
+    final all = orderedTodos(
+      _events,
+      settings.copyWith(
+        todoSort: TodoSort.importance,
+        todoSortDescending: false,
+      ),
+    );
+    final ids = visibleOrder.toSet();
+    if (ids.length != visibleOrder.length ||
+        ids.any((id) => !all.any((e) => e.id == id && !e.completed))) {
+      throw const FormatException('待办已变更，请重试');
+    }
+    final byId = {for (final e in all) e.id: e};
+    final replacements = visibleOrder.iterator;
+    final reordered = [
+      for (final e in all)
+        if (ids.contains(e.id)) (replacements..moveNext()).current else e.id,
+    ];
+    final changes = <ScheduleEvent>[];
+    for (var i = 0; i < reordered.length; i++) {
+      final e = byId[reordered[i]]!;
+      if (e.todoOrder != i) changes.add(e.copyWith(todoOrder: i));
+    }
+    if (changes.isNotEmpty) await _persistEvents(changes);
+    _notify();
+  });
   Future<void> initialize({bool startTimer = true}) async {
     loading = true;
     error = null;
@@ -278,7 +333,7 @@ class AppController extends ChangeNotifier {
     bool entireSeries = false,
     DateTime? newEnd,
   }) => _serialize(() async {
-    final current = events.where((e) => e.id == event.id).firstOrNull;
+    final current = calendarEvents.where((e) => e.id == event.id).firstOrNull;
     if (current == null) throw const FormatException('日程已变更，请重试');
     final delta = newStart.difference(current.start);
     final endDelta = newEnd?.difference(current.end) ?? delta;
@@ -344,7 +399,7 @@ class AppController extends ChangeNotifier {
   });
 
   Future<void> toggleCompleted(ScheduleEvent event) => _serialize(() async {
-    final current = events
+    final current = allItems
         .where((e) => e.id == event.id && !e.deleted)
         .firstOrNull;
     if (current == null) return;
@@ -357,7 +412,7 @@ class AppController extends ChangeNotifier {
       _serialize(() async {
         final current = entireSeries
             ? seriesFor(event)
-            : events.where((e) => e.id == event.id && !e.deleted).firstOrNull;
+            : allItems.where((e) => e.id == event.id && !e.deleted).firstOrNull;
         if (current == null) return;
         await _persistEvent(current.copyWith(deleted: true));
         await _syncNotifications();
@@ -414,11 +469,15 @@ class AppController extends ChangeNotifier {
 
   Future<void> _completeExpired() async {
     automationError = null;
-    if (!settings.autoCompleteExpired) return;
+    if (!settings.autoCompleteExpired && !settings.autoCompleteTodos) return;
     _checkReminders();
     try {
-      for (final event in events.where(
-        (e) => e.statusAt(now) == ScheduleStatus.overdue,
+      for (final event in allItems.where(
+        (e) =>
+            (e.isTodo
+                ? settings.autoCompleteTodos
+                : settings.autoCompleteExpired) &&
+            e.statusAt(now) == ScheduleStatus.overdue,
       )) {
         await _persistEvent(
           event.copyWith(completed: true),

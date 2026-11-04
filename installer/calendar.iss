@@ -264,8 +264,11 @@ begin
       if (not VarIsNull(Process.ExecutablePath)) and (not VarIsNull(Process.CommandLine)) then begin
         ProcessPath := Process.ExecutablePath;
         ProcessCommand := Process.CommandLine;
+        StringChangeEx(ProcessPath, '/', '\', True);
+        StringChangeEx(ProcessCommand, '/', '\', True);
         if (CompareText(ProcessPath, ExePath) = 0) and
            (Pos(Lowercase(ScriptPath), Lowercase(ProcessCommand)) > 0) then begin
+          Log('Stopping installed relay PID ' + IntToStr(Process.ProcessId));
           Code := Process.Terminate(0);
           if Code <> 0 then Result := False;
         end;

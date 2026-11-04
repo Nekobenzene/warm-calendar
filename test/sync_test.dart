@@ -157,6 +157,7 @@ void main() {
       await aRepo.saveSettings(
         const AppSettings(
           autoCompleteExpired: true,
+          autoCompleteTodos: true,
           calendarLocked: true,
           deviceName: '工作电脑',
         ),
@@ -165,14 +166,19 @@ void main() {
       await desktop.poll(force: true);
       await mobile.poll(force: true);
       expect((await bRepo.loadSettings()).autoCompleteExpired, true);
+      expect((await bRepo.loadSettings()).autoCompleteTodos, true);
       expect((await bRepo.loadSettings()).calendarLocked, false);
       expect((await bRepo.loadSettings()).deviceName, isEmpty);
       await bRepo.saveSettings(
-        (await bRepo.loadSettings()).copyWith(autoCompleteExpired: false),
+        (await bRepo.loadSettings()).copyWith(
+          autoCompleteExpired: false,
+          autoCompleteTodos: false,
+        ),
       );
       await mobile.poll(force: true);
       await desktop.poll(force: true);
       expect((await aRepo.loadSettings()).autoCompleteExpired, false);
+      expect((await aRepo.loadSettings()).autoCompleteTodos, false);
       expect((await aRepo.loadSettings()).calendarLocked, true);
       expect(
         desktop.devices.firstWhere(
@@ -205,10 +211,42 @@ void main() {
         (await bRepo.loadEvents()).firstWhere((e) => e.id == 'local').deleted,
         true,
       );
+      final todo = ScheduleEvent(
+        id: 'synced-todo',
+        title: '整理资料',
+        notes: '待办备注',
+        isTodo: true,
+        hasDeadline: true,
+        taskCreatedAt: DateTime.utc(2026, 11, 4),
+        todoOrder: 2,
+        start: DateTime(2026, 11, 8, 10),
+        end: DateTime(2026, 11, 8, 10),
+        reminderOffsets: const [],
+        updatedAt: DateTime.now().toUtc(),
+        color: 0x80e4ead9,
+      );
+      await aRepo.saveEvent(todo);
+      await desktop.poll(force: true);
+      await mobile.poll(force: true);
+      final receivedTodo = (await bRepo.loadEvents()).firstWhere(
+        (e) => e.id == todo.id,
+      );
+      expect(receivedTodo.toJson(), todo.toJson());
+      await bRepo.saveEvent(
+        receivedTodo.copyWith(completed: true, todoOrder: 0),
+      );
+      await mobile.poll(force: true);
+      await desktop.poll(force: true);
+      final updatedTodo = (await aRepo.loadEvents()).firstWhere(
+        (e) => e.id == todo.id,
+      );
+      expect(updatedTodo.completed, true);
+      expect(updatedTodo.todoOrder, 0);
+      expect(updatedTodo.createdAt, todo.createdAt);
       await desktop.unlink(mobile.identity!.deviceId);
       await mobile.poll(force: true);
       expect(mobile.linked, false);
-      expect((await bRepo.loadEvents()).length, 2);
+      expect((await bRepo.loadEvents()).length, 3);
       final originalId = mobile.identity!.deviceId;
       await desktop.refreshQr();
       await mobile.requestPair(desktop.qrData!);

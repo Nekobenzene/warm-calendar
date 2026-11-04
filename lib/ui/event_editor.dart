@@ -3,6 +3,7 @@ import '../app_controller.dart';
 import '../domain/models.dart';
 import 'event_form.dart';
 import 'motion.dart';
+import 'todo_editor.dart';
 
 Future<void> openEventEditor(
   BuildContext context,
@@ -11,6 +12,10 @@ Future<void> openEventEditor(
   DateTime? date,
   bool exactTime = false,
 }) async {
+  if (event?.isTodo == true) {
+    await openTodoEditor(context, controller, task: event);
+    return;
+  }
   var editing = event;
   if (event?.seriesId != null) {
     final entire = await showAppDialog<bool>(

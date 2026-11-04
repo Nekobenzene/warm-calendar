@@ -30,6 +30,7 @@ export function createSyncServer({ database = ':memory:', allowedOrigins = [], n
       payload TEXT NOT NULL, sequence INTEGER NOT NULL, PRIMARY KEY(group_id,id));
     CREATE TABLE IF NOT EXISTS registrations (id TEXT PRIMARY KEY, secret_hash TEXT NOT NULL, device_id TEXT NOT NULL UNIQUE);
     CREATE TABLE IF NOT EXISTS group_settings (group_id TEXT PRIMARY KEY, auto_complete INTEGER NOT NULL);`);
+  if (!db.prepare('PRAGMA table_info(group_settings)').all().some(c => c.name === 'auto_complete_todos')) db.exec('ALTER TABLE group_settings ADD COLUMN auto_complete_todos INTEGER NOT NULL DEFAULT 0');
   const get = (sql, ...args) => db.prepare(sql).get(...args);
   const all = (sql, ...args) => db.prepare(sql).all(...args);
   const run = (sql, ...args) => db.prepare(sql).run(...args);
@@ -76,6 +77,7 @@ export function createSyncServer({ database = ':memory:', allowedOrigins = [], n
     } catch (error) { if (error instanceof ApiError) throw error; throw new ApiError(400, 'JSON格式错误'); }
   }
   function validateEvent(e) {
+    if (e?.isTodo === true) requireValue(typeof e.hasDeadline === 'boolean' && Number.isFinite(Date.parse(e.taskCreatedAt)) && Number.isSafeInteger(e.todoOrder) && e.todoOrder >= 0 && e.start === e.end && !e.allDay && !e.recurrence && !e.seriesId && Array.isArray(e.reminderOffsets) && e.reminderOffsets.length === 0, 400, '待办数据无效');
     requireValue(e && typeof e === 'object' && !Array.isArray(e) && typeof e.id === 'string' && e.id.length > 0 && e.id.length <= 512, 400, '日程ID无效');
     requireValue(typeof e.title === 'string' && e.title.trim().length > 0 && e.title.length <= (e.nodeId ? 241 : 120) &&
       (e.notes == null || typeof e.notes === 'string' && e.notes.length <= (e.nodeId ? 8001 : 4000)) &&
@@ -220,9 +222,12 @@ export function createSyncServer({ database = ':memory:', allowedOrigins = [], n
         requireValue(device.owner || state(device).linked, 403, '请先扫码并在桌面端确认连接');
         requireValue(Array.isArray(input.events) && input.events.length <= 100 && Number.isSafeInteger(input.cursor) && input.cursor >= 0, 400, '同步请求无效');
         const values = input.events.map(e => [e, validateEvent(e)]);
-        requireValue(input.settings == null || typeof input.settings.autoCompleteExpired === 'boolean', 400, '共享设置无效');
+        requireValue(input.settings == null || (typeof input.settings.autoCompleteExpired === 'boolean' && (input.settings.autoCompleteTodos == null || typeof input.settings.autoCompleteTodos === 'boolean')), 400, '共享设置无效');
         const output = transaction(() => {
-          if (input.settings != null) run('INSERT OR REPLACE INTO group_settings VALUES (?,?)', device.group_id, input.settings.autoCompleteExpired ? 1 : 0);
+          if (input.settings != null) {
+            const old = get('SELECT auto_complete_todos FROM group_settings WHERE group_id=?', device.group_id);
+            run('INSERT OR REPLACE INTO group_settings(group_id,auto_complete,auto_complete_todos) VALUES (?,?,?)', device.group_id, input.settings.autoCompleteExpired ? 1 : 0, input.settings.autoCompleteTodos == null ? (old?.auto_complete_todos ?? 0) : input.settings.autoCompleteTodos ? 1 : 0);
+          }
           for (const [e, json] of values) {
             const old = get('SELECT payload FROM events WHERE group_id=? AND id=?', device.group_id, e.id);
             if (old?.payload === json) continue;
@@ -240,10 +245,10 @@ export function createSyncServer({ database = ':memory:', allowedOrigins = [], n
             if (page.length === 100 || page.length > 0 && pageBytes + bytes > 1800 * 1024) break;
             page.push(row); pageBytes += bytes;
           }
-          const preferences = get('SELECT auto_complete FROM group_settings WHERE group_id=?', device.group_id);
-          return { settings: preferences ? { autoCompleteExpired: !!preferences.auto_complete } : null,
+          const preferences = get('SELECT auto_complete,auto_complete_todos FROM group_settings WHERE group_id=?', device.group_id);
+          return { settings: preferences ? { autoCompleteExpired: !!preferences.auto_complete, ...(input.supportsTodos === true ? { autoCompleteTodos: !!preferences.auto_complete_todos } : {}) } : null,
             groupId: device.group_id, cursor: page.length ? page.at(-1).sequence : current,
-            hasMore: rows.length > page.length, events: page.map(r => JSON.parse(r.payload)), ...state(device) };
+            hasMore: rows.length > page.length, events: page.map(r => JSON.parse(r.payload)).filter(e => input.supportsTodos === true || e.isTodo !== true), ...state(device) };
         });
         send(200, output); return;
       }

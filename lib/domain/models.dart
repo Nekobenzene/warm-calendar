@@ -14,6 +14,16 @@ String clockText(DateTime d, {bool seconds = false, bool hour24 = true}) {
 
 enum ScheduleStatus { pending, ongoing, completed, overdue }
 
+enum TodoSort { created, importance, deadline }
+
+extension TodoSortLabel on TodoSort {
+  String get label => switch (this) {
+    TodoSort.created => '创建时间',
+    TodoSort.importance => '重要程度',
+    TodoSort.deadline => '截止时间',
+  };
+}
+
 enum RepeatFrequency { daily, weekly, monthly, interval }
 
 enum HolidayPolicy {
@@ -220,6 +230,13 @@ extension StatusLabel on ScheduleStatus {
 }
 
 class ScheduleEvent {
+  // Tasks share the durable record/outbox format, but never become timed
+  // schedules. start/end are a zero-length calendar projection when dated.
+  final bool isTodo, hasDeadline;
+  final DateTime? taskCreatedAt;
+  final int todoOrder;
+  DateTime get createdAt => taskCreatedAt ?? updatedAt;
+  DateTime? get deadline => isTodo && hasDeadline ? start : null;
   final String id;
   final String title;
   final String notes;
@@ -249,6 +266,10 @@ class ScheduleEvent {
   int get displayColor => completed ? completedColor : color;
 
   const ScheduleEvent({
+    this.isTodo = false,
+    this.hasDeadline = false,
+    this.taskCreatedAt,
+    this.todoOrder = 0,
     required this.id,
     required this.title,
     required this.start,
@@ -273,6 +294,10 @@ class ScheduleEvent {
 
   ScheduleStatus statusAt(DateTime now) => completed
       ? ScheduleStatus.completed
+      : isTodo
+      ? hasDeadline && !start.isAfter(now)
+            ? ScheduleStatus.overdue
+            : ScheduleStatus.pending
       : !end.isAfter(now)
       ? ScheduleStatus.overdue
       : !now.isBefore(start)
@@ -281,6 +306,7 @@ class ScheduleEvent {
   bool get isOverdue => statusAt(DateTime.now()) == ScheduleStatus.overdue;
   bool get isPoint => !allDay && end.isAtSameMomentAs(start);
   bool occursOn(DateTime day) {
+    if (isTodo && !hasDeadline) return false;
     if (isPoint) return sameDay(start, day);
     final d = dayOnly(day);
     return start.isBefore(DateTime(d.year, d.month, d.day + 1)) &&
@@ -292,18 +318,28 @@ class ScheduleEvent {
       : start.subtract(Duration(minutes: reminderMinutes!));
 
   ScheduleEvent copyWith({
+    String? title,
+    String? notes,
+    int? color,
+    int? completedColor,
+    bool? hasDeadline,
+    int? todoOrder,
     bool? completed,
     bool? deleted,
     DateTime? start,
     DateTime? end,
     RecurrenceRule? recurrence,
   }) => ScheduleEvent(
+    isTodo: isTodo,
+    hasDeadline: hasDeadline ?? this.hasDeadline,
+    taskCreatedAt: taskCreatedAt,
+    todoOrder: todoOrder ?? this.todoOrder,
     id: id,
-    title: title,
+    title: title ?? this.title,
     start: start ?? this.start,
     end: end ?? this.end,
     updatedAt: DateTime.now().toUtc(),
-    notes: notes,
+    notes: notes ?? this.notes,
     allDay: allDay,
     completed: completed ?? this.completed,
     reminderMinutes: reminderMinutes,
@@ -315,11 +351,17 @@ class ScheduleEvent {
     seriesId: seriesId,
     occurrenceKey: occurrenceKey,
     nodeId: nodeId,
-    color: color,
-    completedColor: completedColor,
+    color: color ?? this.color,
+    completedColor: completedColor ?? this.completedColor,
   );
 
   Map<String, dynamic> toJson() => {
+    if (isTodo) ...{
+      'isTodo': true,
+      'hasDeadline': hasDeadline,
+      'taskCreatedAt': createdAt.toUtc().toIso8601String(),
+      'todoOrder': todoOrder,
+    },
     'id': id,
     'title': title,
     'notes': notes,
@@ -349,6 +391,12 @@ class ScheduleEvent {
     }
 
     final event = ScheduleEvent(
+      isTodo: json['isTodo'] == true,
+      hasDeadline: json['hasDeadline'] == true,
+      taskCreatedAt: json['taskCreatedAt'] == null
+          ? null
+          : DateTime.parse(json['taskCreatedAt'] as String).toUtc(),
+      todoOrder: json['todoOrder'] as int? ?? 0,
       id: json['id'] as String,
       title: json['title'] as String,
       notes: json['notes'] as String? ?? '',
@@ -373,7 +421,16 @@ class ScheduleEvent {
       occurrenceKey: json['occurrenceKey'] as String?,
       nodeId: json['nodeId'] as String?,
     );
-    if (event.id.isEmpty ||
+    if ((event.isTodo &&
+            (event.taskCreatedAt == null ||
+                event.todoOrder < 0 ||
+                event.todoOrder > 9007199254740991 ||
+                event.allDay ||
+                !event.isPoint ||
+                event.recurrence != null ||
+                event.seriesId != null ||
+                event.reminderOffsets.isNotEmpty)) ||
+        event.id.isEmpty ||
         event.title.trim().isEmpty ||
         event.title.length > (event.nodeId == null ? 120 : 241) ||
         event.notes.length > (event.nodeId == null ? 4000 : 8001) ||
@@ -407,6 +464,8 @@ class ScheduleEvent {
 }
 
 class AppSettings {
+  final TodoSort todoSort;
+  final bool todoSortDescending, autoCompleteTodos;
   final bool autoCheckUpdates;
   final bool autoUpdateHolidays;
   final int holidayCheckedAt;
@@ -431,6 +490,9 @@ class AppSettings {
   final bool closeToTray;
   final bool launchAtStartup;
   const AppSettings({
+    this.todoSort = TodoSort.importance,
+    this.todoSortDescending = false,
+    this.autoCompleteTodos = false,
     this.autoCheckUpdates = true,
     this.autoUpdateHolidays = true,
     this.holidayCheckedAt = 0,
@@ -459,6 +521,9 @@ class AppSettings {
     this.launchAtStartup = false,
   });
   AppSettings copyWith({
+    TodoSort? todoSort,
+    bool? todoSortDescending,
+    bool? autoCompleteTodos,
     bool? autoCheckUpdates,
     bool? autoUpdateHolidays,
     int? holidayCheckedAt,
@@ -486,6 +551,9 @@ class AppSettings {
     bool? closeToTray,
     bool? launchAtStartup,
   }) => AppSettings(
+    todoSort: todoSort ?? this.todoSort,
+    todoSortDescending: todoSortDescending ?? this.todoSortDescending,
+    autoCompleteTodos: autoCompleteTodos ?? this.autoCompleteTodos,
     autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
     autoUpdateHolidays: autoUpdateHolidays ?? this.autoUpdateHolidays,
     holidayCheckedAt: holidayCheckedAt ?? this.holidayCheckedAt,
@@ -515,6 +583,9 @@ class AppSettings {
     launchAtStartup: launchAtStartup ?? this.launchAtStartup,
   );
   Map<String, dynamic> toJson() => {
+    'todoSort': todoSort.name,
+    'todoSortDescending': todoSortDescending,
+    'autoCompleteTodos': autoCompleteTodos,
     'autoCheckUpdates': autoCheckUpdates,
     'autoUpdateHolidays': autoUpdateHolidays,
     'holidayCheckedAt': holidayCheckedAt,
@@ -543,6 +614,11 @@ class AppSettings {
     'launchAtStartup': launchAtStartup,
   };
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
+    todoSort:
+        TodoSort.values.where((v) => v.name == j['todoSort']).firstOrNull ??
+        TodoSort.importance,
+    todoSortDescending: j['todoSortDescending'] == true,
+    autoCompleteTodos: j['autoCompleteTodos'] == true,
     autoCheckUpdates: j['autoCheckUpdates'] != false,
     autoUpdateHolidays: j['autoUpdateHolidays'] != false,
     holidayCheckedAt: j['holidayCheckedAt'] is int && j['holidayCheckedAt'] >= 0

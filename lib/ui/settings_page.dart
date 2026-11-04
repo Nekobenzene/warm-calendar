@@ -276,6 +276,13 @@ class _SettingsPageState extends State<SettingsPage> {
                         c.settings.copyWith(autoCompleteExpired: v),
                       ),
                     ),
+                    _switchRow(
+                      '待办过期自动完成',
+                      c.settings.autoCompleteTodos,
+                      (v) => c.updateSettings(
+                        c.settings.copyWith(autoCompleteTodos: v),
+                      ),
+                    ),
                     const Padding(
                       padding: EdgeInsets.only(bottom: 12),
                       child: Text(

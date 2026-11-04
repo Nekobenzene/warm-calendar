@@ -79,7 +79,7 @@ void main() {
     final event=find.byKey(ValueKey('interaction-details-${dateKey(today)}'));
     await tester.tap(event); await tester.pumpAndSettle();
     final details=find.byKey(const ValueKey('mobile-calendar-details'));
-    expect(details,findsOneWidget); expect(find.text('会议备注'),findsOneWidget);
+    expect(details,findsOneWidget); expect(find.descendant(of: details, matching: find.text('会议备注')),findsOneWidget);
     expect(tester.getBottomLeft(details).dy,lessThanOrEqualTo(tester.getTopLeft(find.byType(NavigationBar)).dy));
     await tester.tap(find.byKey(const ValueKey('calendar-lock'))); await tester.pumpAndSettle();
     expect(details,findsNothing); expect(find.text('拖动'),findsNothing);

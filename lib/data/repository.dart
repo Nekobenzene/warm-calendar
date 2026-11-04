@@ -112,12 +112,14 @@ class SqliteScheduleRepository implements ScheduleRepository {
       'INSERT OR REPLACE INTO settings (id,payload) VALUES (1,?)',
       [jsonEncode(settings.toJson())],
     );
-    if (old.autoCompleteExpired != settings.autoCompleteExpired) {
+    if (old.autoCompleteExpired != settings.autoCompleteExpired ||
+        old.autoCompleteTodos != settings.autoCompleteTodos) {
       await db.customStatement(
         'INSERT OR REPLACE INTO shared_settings(id,payload,dirty) VALUES (1,?,1)',
         [
           jsonEncode({
             'autoCompleteExpired': settings.autoCompleteExpired,
+            'autoCompleteTodos': settings.autoCompleteTodos,
             'changeId':
                 '${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(0x3fffffff)}',
           }),
