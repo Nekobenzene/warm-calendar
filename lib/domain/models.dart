@@ -1,4 +1,5 @@
 import 'dart:convert';
+part 'recurrence_node.dart';
 
 String dateKey(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -15,7 +16,31 @@ enum ScheduleStatus { pending, ongoing, completed, overdue }
 
 enum RepeatFrequency { daily, weekly, monthly, interval }
 
-enum HolidayPolicy { ignore, skip, only }
+enum HolidayPolicy {
+  ignore,
+  skip,
+  only,
+  skipHolidays,
+  skipWeekends,
+  onlyWeekends,
+  onlyHolidays,
+}
+
+enum WeekendHolidayPriority { holiday, weekend }
+
+enum RepeatKind { event, cycle }
+
+extension HolidayPolicyLabel on HolidayPolicy {
+  String get label => switch (this) {
+    HolidayPolicy.ignore => '无视',
+    HolidayPolicy.skip => '跳过节假日和周末',
+    HolidayPolicy.skipHolidays => '仅跳过节假日',
+    HolidayPolicy.skipWeekends => '仅跳过周末',
+    HolidayPolicy.only => '仅周末和节假日',
+    HolidayPolicy.onlyWeekends => '仅周末',
+    HolidayPolicy.onlyHolidays => '仅节假日',
+  };
+}
 
 enum ScheduleSort { start, end, updated, title, status }
 
@@ -38,6 +63,11 @@ class RecurrenceRule {
   final List<int> minutes;
   final HolidayPolicy holidayPolicy;
   final int shiftMinutes;
+  final RepeatKind kind;
+  final List<RecurrenceNode> nodes;
+  final int? cycleCount;
+  final bool weekLabels;
+  final WeekendHolidayPriority weekendHolidayPriority;
 
   const RecurrenceRule({
     required this.frequency,
@@ -48,9 +78,71 @@ class RecurrenceRule {
     this.minutes = const [540],
     this.holidayPolicy = HolidayPolicy.ignore,
     this.shiftMinutes = 0,
+    this.kind = RepeatKind.event,
+    this.nodes = const [],
+    this.cycleCount,
+    this.weekLabels = false,
+    this.weekendHolidayPriority = WeekendHolidayPriority.holiday,
   });
 
+  int get periodDays => switch (frequency) {
+    RepeatFrequency.daily => 1,
+    RepeatFrequency.weekly => 7,
+    RepeatFrequency.monthly => 31,
+    RepeatFrequency.interval => intervalDays,
+  };
+  RecurrenceRule copyWith({int? shiftMinutes, List<RecurrenceNode>? nodes}) =>
+      RecurrenceRule(
+        frequency: frequency,
+        until: until,
+        intervalDays: intervalDays,
+        weekdays: weekdays,
+        monthDays: monthDays,
+        minutes: minutes,
+        holidayPolicy: holidayPolicy,
+        shiftMinutes: shiftMinutes ?? this.shiftMinutes,
+        kind: kind,
+        nodes: nodes ?? this.nodes,
+        cycleCount: cycleCount,
+        weekLabels: weekLabels,
+        weekendHolidayPriority: weekendHolidayPriority,
+      );
+
   void validate(DateTime start, {required bool allDay}) {
+    if (cycleCount != null && (cycleCount! < 1 || cycleCount! > 10000)) {
+      throw const FormatException('循环周期数需在1—10000之间');
+    }
+    if (nodes.length > 96 ||
+        nodes.map((n) => n.id).toSet().length != nodes.length) {
+      throw const FormatException('节点最多96个，且不能重复');
+    }
+    for (final node in nodes) {
+      node.validate(periodDays, monthly: frequency == RepeatFrequency.monthly);
+      if (kind == RepeatKind.event && node.dayOffset != 0) {
+        throw const FormatException('重复日程节点按每日起点排列，请使用重复周期安排多日节点');
+      }
+    }
+    if (kind == RepeatKind.cycle) {
+      if (nodes.isEmpty ||
+          nodes.length > 96 ||
+          nodes.map((e) => e.id).toSet().length != nodes.length ||
+          intervalDays < 1 ||
+          intervalDays > 365 ||
+          until.year > 2099 ||
+          until.isBefore(
+            dayOnly(start.subtract(Duration(minutes: shiftMinutes))),
+          ) ||
+          shiftMinutes.abs() > 105000000) {
+        throw const FormatException('请检查周期、节点和结束范围（最多96个节点）');
+      }
+      for (final node in nodes) {
+        node.validate(
+          periodDays,
+          monthly: frequency == RepeatFrequency.monthly,
+        );
+      }
+      return;
+    }
     bool validList(List<int> values, int min, int max) =>
         values.isNotEmpty &&
         values.toSet().length == values.length &&
@@ -62,9 +154,10 @@ class RecurrenceRule {
         until.year > 2099 ||
         intervalDays < 1 ||
         intervalDays > 365 ||
-        !validList(minutes, 0, 1439) ||
-        minutes.length > 24 ||
-        (allDay && (minutes.length != 1 || minutes.first != 0)) ||
+        (nodes.isEmpty &&
+            (!validList(minutes, 0, 1439) ||
+                minutes.length > 24 ||
+                (allDay && (minutes.length != 1 || minutes.first != 0)))) ||
         (frequency == RepeatFrequency.weekly && !validList(weekdays, 1, 7)) ||
         (frequency == RepeatFrequency.monthly &&
             !validList(monthDays, 1, 31))) {
@@ -81,6 +174,11 @@ class RecurrenceRule {
     'minutes': minutes,
     'holidayPolicy': holidayPolicy.name,
     'shiftMinutes': shiftMinutes,
+    'kind': kind.name,
+    if (nodes.isNotEmpty) 'nodes': nodes.map((n) => n.toJson()).toList(),
+    if (cycleCount != null) 'cycleCount': cycleCount,
+    'weekLabels': weekLabels,
+    'weekendHolidayPriority': weekendHolidayPriority.name,
   };
 
   factory RecurrenceRule.fromJson(Map<String, dynamic> j) {
@@ -97,6 +195,17 @@ class RecurrenceRule {
       minutes: (j['minutes'] as List).cast<int>(),
       holidayPolicy: HolidayPolicy.values.byName(j['holidayPolicy'] as String),
       shiftMinutes: j['shiftMinutes'] as int? ?? 0,
+      kind: RepeatKind.values.byName(j['kind'] as String? ?? 'event'),
+      nodes: (j['nodes'] as List? ?? [])
+          .map(
+            (n) => RecurrenceNode.fromJson(Map<String, dynamic>.from(n as Map)),
+          )
+          .toList(),
+      cycleCount: j['cycleCount'] as int?,
+      weekLabels: j['weekLabels'] == true,
+      weekendHolidayPriority: WeekendHolidayPriority.values.byName(
+        j['weekendHolidayPriority'] as String? ?? 'holiday',
+      ),
     );
   }
 }
@@ -134,6 +243,7 @@ class ScheduleEvent {
   final String? seriesId;
   // Original local date and time; remains stable after editing one occurrence.
   final String? occurrenceKey;
+  final String? nodeId;
   final int color;
   final int completedColor;
   int get displayColor => completed ? completedColor : color;
@@ -155,6 +265,7 @@ class ScheduleEvent {
     this.recurrence,
     this.seriesId,
     this.occurrenceKey,
+    this.nodeId,
     this.color = 0xFFE4EAD9,
     this.completedColor = 0xFFE2E3DF,
   }) : _legacyReminderMinutes = reminderMinutes,
@@ -203,6 +314,7 @@ class ScheduleEvent {
     recurrence: recurrence ?? this.recurrence,
     seriesId: seriesId,
     occurrenceKey: occurrenceKey,
+    nodeId: nodeId,
     color: color,
     completedColor: completedColor,
   );
@@ -226,6 +338,7 @@ class ScheduleEvent {
     if (recurrence != null) 'recurrence': recurrence!.toJson(),
     if (seriesId != null) 'seriesId': seriesId,
     if (occurrenceKey != null) 'occurrenceKey': occurrenceKey,
+    if (nodeId != null) 'nodeId': nodeId,
   };
 
   factory ScheduleEvent.fromJson(Map<String, dynamic> json) {
@@ -258,11 +371,12 @@ class ScheduleEvent {
             ),
       seriesId: json['seriesId'] as String?,
       occurrenceKey: json['occurrenceKey'] as String?,
+      nodeId: json['nodeId'] as String?,
     );
     if (event.id.isEmpty ||
         event.title.trim().isEmpty ||
-        event.title.length > 120 ||
-        event.notes.length > 4000 ||
+        event.title.length > (event.nodeId == null ? 120 : 241) ||
+        event.notes.length > (event.nodeId == null ? 4000 : 8001) ||
         event.color < 0 ||
         event.color > 0xFFFFFFFF ||
         event.completedColor < 0 ||
@@ -278,11 +392,13 @@ class ScheduleEvent {
     }
     event.recurrence?.validate(event.start, allDay: event.allDay);
     if ((event.seriesId == null) != (event.occurrenceKey == null) ||
+        (event.nodeId != null &&
+            !RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(event.nodeId!)) ||
         (event.seriesId != null &&
             (event.seriesId!.isEmpty ||
                 event.recurrence != null ||
                 !RegExp(
-                  r'^\d{4}-\d{2}-\d{2}T\d{4}$',
+                  r'^\d{4}-\d{2}-\d{2}T\d{4}(~[A-Za-z0-9_-]{1,64})?$',
                 ).hasMatch(event.occurrenceKey!)))) {
       throw const FormatException('重复日程关联信息无效');
     }
@@ -291,6 +407,7 @@ class ScheduleEvent {
 }
 
 class AppSettings {
+  final bool autoCheckUpdates;
   final bool autoUpdateHolidays;
   final int holidayCheckedAt;
   final Map<String, String> holidayCache;
@@ -314,6 +431,7 @@ class AppSettings {
   final bool closeToTray;
   final bool launchAtStartup;
   const AppSettings({
+    this.autoCheckUpdates = true,
     this.autoUpdateHolidays = true,
     this.holidayCheckedAt = 0,
     this.holidayCache = const {},
@@ -341,6 +459,7 @@ class AppSettings {
     this.launchAtStartup = false,
   });
   AppSettings copyWith({
+    bool? autoCheckUpdates,
     bool? autoUpdateHolidays,
     int? holidayCheckedAt,
     Map<String, String>? holidayCache,
@@ -367,6 +486,7 @@ class AppSettings {
     bool? closeToTray,
     bool? launchAtStartup,
   }) => AppSettings(
+    autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
     autoUpdateHolidays: autoUpdateHolidays ?? this.autoUpdateHolidays,
     holidayCheckedAt: holidayCheckedAt ?? this.holidayCheckedAt,
     holidayCache: holidayCache ?? this.holidayCache,
@@ -395,6 +515,7 @@ class AppSettings {
     launchAtStartup: launchAtStartup ?? this.launchAtStartup,
   );
   Map<String, dynamic> toJson() => {
+    'autoCheckUpdates': autoCheckUpdates,
     'autoUpdateHolidays': autoUpdateHolidays,
     'holidayCheckedAt': holidayCheckedAt,
     'holidayCache': holidayCache,
@@ -422,6 +543,7 @@ class AppSettings {
     'launchAtStartup': launchAtStartup,
   };
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
+    autoCheckUpdates: j['autoCheckUpdates'] != false,
     autoUpdateHolidays: j['autoUpdateHolidays'] != false,
     holidayCheckedAt: j['holidayCheckedAt'] is int && j['holidayCheckedAt'] >= 0
         ? j['holidayCheckedAt'] as int

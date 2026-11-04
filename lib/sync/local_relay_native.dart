@@ -2,10 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import '../version.dart';
+
+int get _relayPort => isLocalPreview ? 4281 : 4280;
 
 bool get canStartLocalRelay => Platform.isWindows;
 Future<void> resumeLocalRelay(Uri server) async {
-  if (!canStartLocalRelay || server.scheme != 'http' || server.port != 4280) {
+  if (!canStartLocalRelay ||
+      server.scheme != 'http' ||
+      server.port != _relayPort) {
     return;
   }
   final local = await NetworkInterface.list(
@@ -23,7 +28,7 @@ Future<List<String>> startLocalRelay() async {
   Future<bool> healthy() async {
     try {
       final response = await (await client.getUrl(
-        Uri.parse('http://127.0.0.1:4280/health'),
+        Uri.parse('http://127.0.0.1:$_relayPort/health'),
       )).close().timeout(const Duration(seconds: 2));
       final result =
           jsonDecode(await response.transform(utf8.decoder).join())
@@ -44,7 +49,9 @@ Future<List<String>> startLocalRelay() async {
         throw const FileSystemException('未找到本机同步服务，请使用完整桌面安装包');
       }
       final support = await getApplicationSupportDirectory();
-      final data = Directory('${support.path}/sync-service');
+      final data = Directory(
+        '${support.path}/${isLocalPreview ? 'sync-service-preview' : 'sync-service'}',
+      );
       await data.create(recursive: true);
       await Process.start(
         node.path,
@@ -52,7 +59,7 @@ Future<List<String>> startLocalRelay() async {
         workingDirectory: data.path,
         environment: {
           'SYNC_HOST': '0.0.0.0',
-          'SYNC_PORT': '4280',
+          'SYNC_PORT': '$_relayPort',
           'SYNC_DATABASE': '${data.path}/calendar.sqlite',
         },
         mode: ProcessStartMode.detached,
@@ -65,7 +72,7 @@ Future<List<String>> startLocalRelay() async {
         }
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
-      if (!ready) throw const FileSystemException('本机同步服务未启动，请检查4280端口');
+      if (!ready) throw FileSystemException('本机同步服务未启动，请检查$_relayPort端口');
     }
     final interfaces = await NetworkInterface.list(
       type: InternetAddressType.IPv4,
@@ -84,7 +91,7 @@ Future<List<String>> startLocalRelay() async {
         )
         .toSet()
         .toList();
-    return [for (final address in addresses) 'http://$address:4280'];
+    return [for (final address in addresses) 'http://$address:$_relayPort'];
   } finally {
     client.close(force: true);
   }

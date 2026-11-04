@@ -1,6 +1,18 @@
 # 发布安装包
 
-仓库为 https://github.com/Nekobenzene/warm-calendar，默认分支main，版本来自pubspec.yaml。Android必须保留原发布密钥；不要将密钥、key.properties或个人数据库提交到仓库。
+仓库为 https://github.com/Nekobenzene/warm-calendar，默认分支main。发布前同时更新pubspec.yaml版本/构建号与lib/version.dart版本，二者必须一致。Android必须保留原发布密钥；不要将密钥、key.properties或个人数据库提交到仓库。
+
+## 本地预览
+
+版本含`-preview`时，Windows/Android自动采用独立应用身份、数据库和连接凭据，可与正式版并存。Windows预览默认安装到`%LOCALAPPDATA%/Programs/WarmCalendarPreview`；Android包名增加`.preview`。预览仅下载正式更新包，不执行覆盖安装，且不会降级安装较旧正式版本。
+
+```powershell
+.\scripts\build-desktop.ps1 -OutputDirectory dist/previews/0.6.0-preview.1/windows
+.\scripts\build-installer.ps1 -PackageDirectory dist/previews/0.6.0-preview.1/windows
+.\scripts\build-android.ps1 -OutputPath dist/previews/0.6.0-preview.1/warm-calendar-0.6.0-preview.1-android.apk
+```
+
+预览产物保存在`dist/previews/版本/`，不自动推送或发布；`prepare-release.ps1`拒绝预发布版本。正式发布须去掉preview标记、同步两处版本、重新构建，并验证真实安装升级。安装完成不等于系统提醒、Android真机行为或自动更新已端到端验收，按实际验证记录说明。
 
 ## 生成与整理
 

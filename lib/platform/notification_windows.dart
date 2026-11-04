@@ -7,6 +7,7 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 import '../domain/models.dart';
 import '../domain/reminders.dart';
+import '../version.dart';
 import 'notification_api.dart';
 
 /// COM activation is supplied by the maintained Windows notification plugin.
@@ -55,13 +56,24 @@ class NotificationService extends NotificationBackend
     _plugin = FlutterLocalNotificationsWindows();
     final ready = await _plugin!.initialize(
       settings: WindowsInitializationSettings(
-        appName: verification ? '日程表验证' : '日程表',
-        appUserModelId: verification
+        appName: isLocalPreview
+            ? '日程表 · 本地预览'
+            : verification
+            ? '日程表验证'
+            : '日程表',
+        appUserModelId: isLocalPreview
+            ? 'WarmCalendar.Planner.Preview'
+            : verification
             ? 'WarmCalendar.Planner.Verification'
             : 'WarmCalendar.Planner.Desktop',
-        guid: verification
+        guid: isLocalPreview
+            ? '96e55b26-0749-4543-ae4e-4c8535468812'
+            : verification
             ? '96e55b26-0749-4543-ae4e-4c8535468811'
             : '96e55b26-0749-4543-ae4e-4c8535468810',
+        iconPath: File(Platform.resolvedExecutable).parent.uri
+            .resolve('data/flutter_assets/assets/icons/app_icon.ico')
+            .toFilePath(),
       ),
       onDidReceiveNotificationResponse: (response) {
         final id = response.payload;
@@ -249,6 +261,9 @@ class NotificationService extends NotificationBackend
     if (_trayReady) await trayManager.destroy();
     await windowManager.destroy();
   }
+
+  @override
+  Future<void> exitForUpdate() => _exit();
 
   @override
   void onTrayIconMouseDown() {

@@ -1,6 +1,7 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
+#include <string>
 
 #include "flutter_window.h"
 #include "utils.h"
@@ -9,8 +10,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
   const bool activation = wcsstr(command_line, L"-ToastActivated") != nullptr;
   const bool verification = wcsstr(command_line, L"--verification") != nullptr;
-  const wchar_t* title = verification ? L"日程表 · 验证" : L"日程表";
-  HANDLE app_mutex = CreateMutexW(nullptr, FALSE, verification ? L"Local\\WarmCalendar.Planner.Verification" : L"Local\\WarmCalendar.Planner.Desktop");
+  const bool preview = std::string(FLUTTER_VERSION).find("-preview") != std::string::npos;
+  const wchar_t* title = preview ? L"日程表 · 本地预览" : verification ? L"日程表 · 验证" : L"日程表";
+  HANDLE app_mutex = CreateMutexW(nullptr, FALSE, preview ? L"Local\\WarmCalendar.Planner.Preview" : verification ? L"Local\\WarmCalendar.Planner.Verification" : L"Local\\WarmCalendar.Planner.Desktop");
   if (!activation && GetLastError() == ERROR_ALREADY_EXISTS) {
     if (const auto existing = FindWindowW(nullptr, title)) {
       ShowWindow(existing, SW_RESTORE);

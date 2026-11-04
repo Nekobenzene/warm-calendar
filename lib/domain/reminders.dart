@@ -18,7 +18,7 @@ String reminderBody(ScheduleEvent event, DateTime now) {
       : minutes >= 60
       ? '${minutes ~/ 60}小时${minutes % 60 > 0 ? '${minutes % 60}分钟' : ''}后开始'
       : '$minutes分钟后开始';
-  return '$when · 开始：${dateKey(event.start)} ${event.allDay ? '全天' : clockText(event.start)}';
+  return '$when · 开始：${dateKey(event.start)} ${event.allDay ? '全天' : clockText(event.start)}${event.notes.isEmpty ? '' : '\n${event.notes}'}';
 }
 
 class ReminderRequest {

@@ -5,6 +5,9 @@
 #ifndef AppVersion
   #define AppVersion "0.4.0"
 #endif
+#ifndef AppVersionNumeric
+  #define AppVersionNumeric AppVersion
+#endif
 #ifndef OutputDir
   #define OutputDir "..\dist"
 #endif
@@ -17,6 +20,15 @@
   #define DesktopMutex "Local\WarmCalendar.Planner.Verification"
   #define NotificationId "WarmCalendar.Planner.Verification"
   #define OutputName "Calendar-Setup-Test"
+#elif defined(PreviewBuild)
+  #define ProductId "WarmCalendar.Planner.Preview"
+  #define ProductName "日程表 · 本地预览"
+  #define ShortcutName "日程表-本地预览"
+  #define StartupName "WarmCalendarPreview"
+  #define AppArguments ""
+  #define DesktopMutex "Local\WarmCalendar.Planner.Preview"
+  #define NotificationId "WarmCalendar.Planner.Preview"
+  #define OutputName "warm-calendar-" + AppVersion + "-windows-x64-setup"
 #else
   #define ProductId "WarmCalendar.Planner.Desktop"
   #define ProductName "日程表"
@@ -32,10 +44,13 @@
 AppId={#ProductId}
 AppName={#ProductName}
 AppVersion={#AppVersion}
+VersionInfoVersion={#AppVersionNumeric}
 AppPublisher=Warm Calendar
 VersionInfoDescription={#ProductName} 安装程序
 #ifdef InstallerTest
 DefaultDirName={localappdata}\Programs\WarmCalendarInstallerTest
+#elif defined(PreviewBuild)
+DefaultDirName={localappdata}\Programs\WarmCalendarPreview
 #else
 DefaultDirName={localappdata}\Programs\WarmCalendar
 #endif
@@ -103,10 +118,16 @@ Type: files; Name: "{code:OldMenuShortcut}"; Check: DeleteOldMenuShortcut
 
 [Run]
 Filename: "{app}\warm_calendar.exe"; Parameters: "{#AppArguments}"; WorkingDir: "{app}"; Description: "立即运行日程表"; Flags: postinstall nowait skipifsilent runasoriginaluser
+Filename: "{app}\warm_calendar.exe"; Parameters: "{#AppArguments}"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser; Check: IsUpdateInstall
 
 [Code]
 var
   ShortcutPage: TInputDirWizardPage;
+
+function IsUpdateInstall: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:UPDATE|0}') = '1');
+end;
 
 function DesktopShortcutDir(Param: String): String;
 begin

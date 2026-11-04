@@ -9,6 +9,7 @@ import 'theme.dart';
 import 'motion.dart';
 import 'appearance.dart';
 import 'holiday_settings.dart';
+import 'update_panel.dart';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -193,6 +194,7 @@ class _SettingsPageState extends State<SettingsPage> {
       'granted' => '已允许',
       'denied' => '已拒绝',
       'default' => '未授权',
+      'unregistered' => '待首次通知确认',
       _ => '当前平台暂未接入',
     };
     return Align(
@@ -586,6 +588,8 @@ class _SettingsPageState extends State<SettingsPage> {
             ...[
               const SizedBox(height: 28),
               Text('关于', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              UpdatePanel(controller: c),
               const SizedBox(height: 12),
               Surface(
                 child: Column(

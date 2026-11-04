@@ -28,7 +28,7 @@ class OverlapRegion {
   final items =
       events.where((e) => !e.allDay && e.occursOn(day)).map((e) {
         final start = minute(e.start);
-        final end = e.isPoint ? math.min(1440.0, start + 1) : minute(e.end);
+        final end = e.isPoint ? start : minute(e.end);
         return TimedPlacement(
           e,
           start,

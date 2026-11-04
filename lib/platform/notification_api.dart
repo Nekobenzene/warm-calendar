@@ -34,6 +34,7 @@ class NotificationBackend {
   Future<void> testNotification({bool sound = true}) =>
       show('日程表', '这是一条测试提醒', sound: sound);
   Future<void> flush() async {}
+  Future<void> exitForUpdate() async {}
   void dispose() {
     openedEvent.dispose();
   }

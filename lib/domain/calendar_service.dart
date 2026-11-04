@@ -69,6 +69,38 @@ class CalendarService {
         date.weekday >= DateTime.saturday;
   }
 
+  bool? allowsDate(
+    DateTime date,
+    HolidayPolicy policy,
+    WeekendHolidayPriority priority,
+  ) {
+    if (policy == HolidayPolicy.ignore) return true;
+    final weekendOnly =
+        policy == HolidayPolicy.onlyWeekends ||
+        policy == HolidayPolicy.skipWeekends;
+    if (!weekendOnly && !holidayYears.contains(date.year)) return null;
+    final special = _holidays[dateKey(date)];
+    var holiday = special?.isOffDay == true;
+    var weekend =
+        date.weekday >= DateTime.saturday && special?.isOffDay != false;
+    if (holiday && weekend) {
+      if (priority == WeekendHolidayPriority.holiday) {
+        weekend = false;
+      } else {
+        holiday = false;
+      }
+    }
+    return switch (policy) {
+      HolidayPolicy.ignore => true,
+      HolidayPolicy.skip => !holiday && !weekend,
+      HolidayPolicy.only => holiday || weekend,
+      HolidayPolicy.skipHolidays => !holiday,
+      HolidayPolicy.skipWeekends => !weekend,
+      HolidayPolicy.onlyWeekends => weekend,
+      HolidayPolicy.onlyHolidays => holiday,
+    };
+  }
+
   CalendarDay info(DateTime date) => _cache.putIfAbsent(dateKey(date), () {
     final solar = Solar.fromDate(date);
     final lunar = solar.getLunar();

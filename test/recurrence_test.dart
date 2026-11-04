@@ -62,19 +62,45 @@ Widget testApp(Widget child) => MaterialApp(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test('整组调整边界保留单次例外，短例外导致负时长时原子拒绝', () async {
-    final c=AppController(repository:MemoryRepository(),calendar:CalendarService());
-    await c.initialize(startTimer:false);
+    final c = AppController(
+      repository: MemoryRepository(),
+      calendar: CalendarService(),
+    );
+    await c.initialize(startTimer: false);
     await c.saveEvent(repeated());
-    var first=c.events.first;
-    await c.moveEvent(first,first.start,newEnd:first.start.add(const Duration(minutes:10)));
-    first=c.events.first;
-    final untouched=c.events.map((e)=>e.toJson()).toList();
-    final second=c.events[1];
-    await expectLater(c.moveEvent(second,second.start,newEnd:second.end.subtract(const Duration(minutes:30)),entireSeries:true),throwsFormatException);
-    expect(c.events.map((e)=>e.toJson()).toList(),untouched);
-    await c.moveEvent(second,second.start,newEnd:second.end.add(const Duration(minutes:30)),entireSeries:true);
-    expect(c.events.first.end.difference(c.events.first.start),const Duration(minutes:40));
-    expect(c.events[1].end.difference(c.events[1].start),const Duration(minutes:90));
+    var first = c.events.first;
+    await c.moveEvent(
+      first,
+      first.start,
+      newEnd: first.start.add(const Duration(minutes: 10)),
+    );
+    first = c.events.first;
+    final untouched = c.events.map((e) => e.toJson()).toList();
+    final second = c.events[1];
+    await expectLater(
+      c.moveEvent(
+        second,
+        second.start,
+        newEnd: second.end.subtract(const Duration(minutes: 30)),
+        entireSeries: true,
+      ),
+      throwsFormatException,
+    );
+    expect(c.events.map((e) => e.toJson()).toList(), untouched);
+    await c.moveEvent(
+      second,
+      second.start,
+      newEnd: second.end.add(const Duration(minutes: 30)),
+      entireSeries: true,
+    );
+    expect(
+      c.events.first.end.difference(c.events.first.start),
+      const Duration(minutes: 40),
+    );
+    expect(
+      c.events[1].end.difference(c.events[1].start),
+      const Duration(minutes: 90),
+    );
     c.dispose();
   });
   test('日/周/月/间隔、多时间点、闰日与短月', () {
@@ -438,19 +464,26 @@ void main() {
         '09:00',
       );
       final repeat = find.byKey(const ValueKey('event-repeat'));
+      await tester.ensureVisible(find.text('重复日程'));
+      await tester.tap(find.text('重复日程'));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(repeat);
       await tester.tap(repeat);
       await tester.pumpAndSettle();
       await tester.tap(find.text('每日').last);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('添加每日时间点'));
-      await tester.tap(find.text('添加每日时间点'));
+      await tester.ensureVisible(find.text('添加节点'));
+      await tester.tap(find.text('添加节点'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(
-        find.widgetWithText(TextFormField, '重复至（含当天）'),
-      );
       await tester.enterText(
-        find.widgetWithText(TextFormField, '重复至（含当天）'),
+        find.widgetWithText(TextFormField, '开始时间').last,
+        '11:00',
+      );
+      await tester.tap(find.text('保存节点'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.widgetWithText(TextFormField, '停止日期'));
+      await tester.enterText(
+        find.widgetWithText(TextFormField, '停止日期'),
         '2026-01-03',
       );
       await tester.ensureVisible(find.text('应用重复规则'));

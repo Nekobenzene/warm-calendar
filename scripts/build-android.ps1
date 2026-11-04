@@ -1,3 +1,4 @@
+param([string]$OutputPath)
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 $taskAlias = Join-Path $env:TEMP 'warm-calendar-01a1827b'
@@ -30,5 +31,7 @@ $taskFlutterPath = (Join-Path $taskAlias '.tooling/flutter-stable').Replace('\',
 if ($LASTEXITCODE -ne 0) { throw '安卓安装包编译失败。' }
 $taskDist = Join-Path $taskRoot 'dist'
 New-Item -ItemType Directory -Path $taskDist -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $taskRoot 'build/app/outputs/flutter-apk/app-release.apk') -Destination (Join-Path $taskDist '日程表-Android.apk') -Force
-Write-Output "安卓安装包：$taskDist\日程表-Android.apk"
+$taskOutput = if ($OutputPath) { [IO.Path]::GetFullPath($OutputPath, $taskRoot) } else { Join-Path $taskDist '日程表-Android.apk' }
+New-Item -ItemType Directory -Path (Split-Path -Parent $taskOutput) -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $taskRoot 'build/app/outputs/flutter-apk/app-release.apk') -Destination $taskOutput -Force
+Write-Output "安卓安装包：$taskOutput"

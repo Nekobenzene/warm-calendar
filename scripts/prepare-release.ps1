@@ -1,6 +1,9 @@
 param([string]$WindowsInstaller, [string]$AndroidApk)
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
+if ((Get-Content -LiteralPath (Join-Path $taskRoot 'pubspec.yaml') -Raw) -match '(?m)^version:\s*\d+\.\d+\.\d+-') {
+    throw '预览版本仅保存在dist/previews；正式发布前请更新版本并去掉预览标识。'
+}
 $taskVersionMatch = [regex]::Match((Get-Content -LiteralPath (Join-Path $taskRoot 'pubspec.yaml') -Raw), '(?m)^version:\s*(\d+\.\d+\.\d+)')
 if (!$taskVersionMatch.Success) { throw '无法读取版本。' }
 $taskVersion = $taskVersionMatch.Groups[1].Value

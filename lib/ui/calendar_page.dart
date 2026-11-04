@@ -288,11 +288,18 @@ class CalendarPageState extends State<CalendarPage>
         left: 2,
         width: width - 4,
         top: start * _hourHeight / 60,
-        height: math.max(12, (end - start) * _hourHeight / 60),
+        height: event.isPoint
+            ? 26
+            : math.max(12, (end - start) * _hourHeight / 60),
         child: IgnorePointer(
-          child: ColoredBox(
-            color: Color(event.displayColor).withValues(alpha: .35),
-          ),
+          child: event.isPoint
+              ? PointEventMarker(
+                  color: Color(event.displayColor).withValues(alpha: .35),
+                  phone: _phone,
+                )
+              : ColoredBox(
+                  color: Color(event.displayColor).withValues(alpha: .35),
+                ),
         ),
       ),
     ];
@@ -362,8 +369,8 @@ class CalendarPageState extends State<CalendarPage>
     _popover?.remove();
     _popover?.dispose();
     final size = MediaQuery.sizeOf(context);
-    final left = (anchor.center.dx - 85)
-        .clamp(8.0, math.max(8.0, size.width - 178))
+    final left = (anchor.center.dx - 126)
+        .clamp(8.0, math.max(8.0, size.width - 260))
         .toDouble();
     final top = (anchor.bottom + 8)
         .clamp(
@@ -375,7 +382,7 @@ class CalendarPageState extends State<CalendarPage>
       builder: (ctx) => Positioned(
         left: left,
         top: top,
-        width: 170,
+        width: 252,
         child: TapRegion(
           groupId: _tapGroup,
           child: FadeTransition(
@@ -422,6 +429,29 @@ class CalendarPageState extends State<CalendarPage>
                           },
                           icon: const Icon(Icons.edit_outlined, size: 16),
                           label: const Text('编辑'),
+                        ),
+                      ),
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            await _hidePopover();
+                            if (mounted) {
+                              await deleteEvent(
+                                context,
+                                widget.controller,
+                                event,
+                              );
+                            }
+                          },
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            size: 16,
+                            color: AppColors.danger,
+                          ),
+                          label: const Text(
+                            '删除',
+                            style: TextStyle(color: AppColors.danger),
+                          ),
                         ),
                       ),
                     ],
@@ -1018,6 +1048,32 @@ class CalendarPageState extends State<CalendarPage>
             '拖动色块或上下边界',
             style: TextStyle(fontSize: 12, color: context.appColors.accent),
           ),
+        if (_selectedEvent != null && !_locked)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _selectedEvent!.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                TextButton.icon(
+                  key: const ValueKey('calendar-delete-selected'),
+                  onPressed: () =>
+                      deleteEvent(context, widget.controller, _selectedEvent!),
+                  icon: const Icon(Icons.delete_outline, size: 17),
+                  label: const Text('删除'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -1450,6 +1506,9 @@ class CalendarPageState extends State<CalendarPage>
       final physics = _pinching
           ? const NeverScrollableScrollPhysics()
           : const ClampingScrollPhysics();
+      if (_zoom == 0) {
+        _hourHeight = math.min(hourHeights.first, (viewportHeight - 28) / 24);
+      }
       final itemCount = _dayIndex(_last) + 1;
       return Listener(
         onPointerDown: _pointerDown,
@@ -1495,7 +1554,7 @@ class CalendarPageState extends State<CalendarPage>
                       physics: physics,
                       child: SizedBox(
                         key: const ValueKey('time-axis'),
-                        height: 24 * _hourHeight,
+                        height: 24 * _hourHeight + 28,
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
@@ -1668,10 +1727,12 @@ class CalendarPageState extends State<CalendarPage>
                 left: 2 + item.lane * ((width - 4) / item.columns),
                 top: item.start * _hourHeight / 60,
                 width: math.max(2, (width - 4) / item.columns - 1),
-                height: math.max(
-                  _phone ? 12 : 20,
-                  (item.occupiedEnd - item.start) * _hourHeight / 60 - 1,
-                ),
+                height: item.event.isPoint
+                    ? 26
+                    : math.max(
+                        _phone ? 12 : 20,
+                        (item.occupiedEnd - item.start) * _hourHeight / 60 - 1,
+                      ),
                 child: _eventWidget(item.event, day, separator: item.separator),
               ),
             for (final region in layout.overlaps)
@@ -1710,7 +1771,8 @@ class CalendarPageState extends State<CalendarPage>
         enabled: active && !_moving && !_pinching && (!_phone || _mobileDrag),
         locked: _locked,
         phone: _phone,
-        resizable: !allDay,
+        resizable: !allDay && !event.isPoint,
+        point: event.isPoint,
         onTap: () => _tapEvent(event, block, blockContext),
         onLongPress: () =>
             _tapEvent(event, block, blockContext, longPress: true),
@@ -1718,47 +1780,63 @@ class CalendarPageState extends State<CalendarPage>
         onUpdate: _dragUpdate,
         onEnd: _finishDrag,
         onCancel: _abortDrag,
-        child: Opacity(
-          opacity: 1,
-          child: Semantics(
-            label:
-                '${event.title} ${eventTimeText(event, widget.controller.settings)}',
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: _dragging?.id == event.id
-                    ? Colors.transparent
-                    : Color(event.displayColor),
-                borderRadius: BorderRadius.circular(3),
-                border: _dragging?.id == event.id
-                    ? null
-                    : separator
-                    ? Border.all(
-                        color: blockText(
-                          event.displayColor,
-                        ).withValues(alpha: .32),
-                      )
-                    : Border.all(color: context.appColors.surface, width: .5),
-              ),
-              child:
-                  _dragging?.id == event.id ||
-                      (_phone && _view == CalendarView.week)
-                  ? const SizedBox.expand()
-                  : Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: Text(
-                        '${allDay ? '全天 · ' : ''}${event.title}${allDay ? '' : '\n${clockText(event.start)}'}',
-                        maxLines: allDay ? 1 : 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1.3,
-                          color: blockText(event.displayColor),
-                        ),
+        child: event.isPoint && !allDay
+            ? Semantics(
+                label:
+                    '${event.title} ${eventTimeText(event, widget.controller.settings)}',
+                child: _dragging?.id == event.id
+                    ? const SizedBox.expand()
+                    : PointEventMarker(
+                        color: Color(event.displayColor),
+                        tagKey: ValueKey('point-tag-${event.id}'),
+                        phone: _phone,
+                        title: _phone ? null : event.title,
                       ),
+              )
+            : Opacity(
+                opacity: 1,
+                child: Semantics(
+                  label:
+                      '${event.title} ${eventTimeText(event, widget.controller.settings)}',
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: _dragging?.id == event.id
+                          ? Colors.transparent
+                          : Color(event.displayColor),
+                      borderRadius: BorderRadius.circular(3),
+                      border: _dragging?.id == event.id
+                          ? null
+                          : separator
+                          ? Border.all(
+                              color: blockText(
+                                event.displayColor,
+                              ).withValues(alpha: .32),
+                            )
+                          : Border.all(
+                              color: context.appColors.surface,
+                              width: .5,
+                            ),
                     ),
-            ),
-          ),
-        ),
+                    child:
+                        _dragging?.id == event.id ||
+                            (_phone && _view == CalendarView.week)
+                        ? const SizedBox.expand()
+                        : Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Text(
+                              '${allDay ? '全天 · ' : ''}${event.title}${allDay ? '' : '\n${clockText(event.start)}'}',
+                              maxLines: allDay ? 1 : 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.3,
+                                color: blockText(event.displayColor),
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+              ),
       );
     },
   );
@@ -1834,6 +1912,8 @@ class _AxisPainter extends CustomPainter {
           ? 15
           : step <= 15
           ? 30
+          : step >= 120
+          ? 120
           : 60;
       if (minute % labelStep != 0) continue;
       final text = TextPainter(

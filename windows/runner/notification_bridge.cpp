@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <shellapi.h>
+#include <shobjidl.h>
 #include <winrt/Windows.Data.Xml.Dom.h>
 #include <winrt/Windows.UI.Notifications.h>
 #include <winrt/Windows.Foundation.Collections.h>
@@ -10,9 +11,11 @@
 #include "notification_bridge.h"
 
 namespace {
+const bool kPreview = std::string(FLUTTER_VERSION).find("-preview") != std::string::npos;
 const bool kVerification = wcsstr(GetCommandLineW(), L"--verification") != nullptr;
-const wchar_t* kAppId = kVerification ? L"WarmCalendar.Planner.Verification" : L"WarmCalendar.Planner.Desktop";
-const wchar_t* kClsid = kVerification ? L"{96e55b26-0749-4543-ae4e-4c8535468811}" : L"{96e55b26-0749-4543-ae4e-4c8535468810}";
+const wchar_t* kAppId = kPreview ? L"WarmCalendar.Planner.Preview" : kVerification ? L"WarmCalendar.Planner.Verification" : L"WarmCalendar.Planner.Desktop";
+const wchar_t* kClsid = kPreview ? L"{96e55b26-0749-4543-ae4e-4c8535468812}" : kVerification ? L"{96e55b26-0749-4543-ae4e-4c8535468811}" : L"{96e55b26-0749-4543-ae4e-4c8535468810}";
+const wchar_t* kStartupName = kPreview ? L"WarmCalendarPreview" : kVerification ? L"WarmCalendarVerification" : L"WarmCalendar";
 using Value = flutter::EncodableValue;
 using Map = flutter::EncodableMap;
 using namespace winrt::Windows::UI::Notifications;
@@ -49,12 +52,21 @@ CreateNotificationBridge(flutter::BinaryMessenger* messenger) {
     try {
       const auto& method = call.method_name();
       if (method == "registerActivation") {
+        winrt::check_hresult(SetCurrentProcessExplicitAppUserModelID(kAppId));
         // Per-user COM server allows a toast click to reopen the executable.
         SetString(HKEY_CURRENT_USER, std::wstring(L"Software\\Classes\\CLSID\\") +
             kClsid + L"\\LocalServer32", nullptr, L"\"" + ExePath() + L"\" -ToastActivated" + (kVerification ? L" --verification" : L""));
         result->Success();
       } else if (method == "permission") {
-        result->Success(Value(Notifier().Setting() == NotificationSetting::Enabled ? "granted" : "denied"));
+        try {
+          result->Success(Value(Notifier().Setting() == NotificationSetting::Enabled ? "granted" : "denied"));
+        } catch (const winrt::hresult_error& error) {
+          // Windows may not create the per-app notification settings entry
+          // until its first toast is delivered. This is not a denial; queue and
+          // delivery failures must still propagate through their own calls.
+          if (error.code().value != HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) throw;
+          result->Success(Value("unregistered"));
+        }
       } else if (method == "openSettings") {
         const auto code = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open",
             L"ms-settings:notifications", nullptr, nullptr, SW_SHOWNORMAL));
@@ -64,7 +76,7 @@ CreateNotificationBridge(flutter::BinaryMessenger* messenger) {
         DWORD bytes = 0;
         const auto code = RegGetValueW(HKEY_CURRENT_USER,
             L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-            kVerification ? L"WarmCalendarVerification" : L"WarmCalendar",
+            kStartupName,
             RRF_RT_REG_SZ, nullptr, nullptr, &bytes);
         if (code != ERROR_SUCCESS && code != ERROR_FILE_NOT_FOUND) {
           winrt::check_win32(code);
@@ -74,11 +86,11 @@ CreateNotificationBridge(flutter::BinaryMessenger* messenger) {
         const auto enabled = std::get<bool>(*call.arguments());
         constexpr auto path = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
         if (enabled) {
-          SetString(HKEY_CURRENT_USER, path, kVerification ? L"WarmCalendarVerification" : L"WarmCalendar", L"\"" + ExePath() + L"\" --tray" + (kVerification ? L" --verification" : L""));
+          SetString(HKEY_CURRENT_USER, path, kStartupName, L"\"" + ExePath() + L"\" --tray" + (kVerification ? L" --verification" : L""));
         } else {
           HKEY key;
           if (RegOpenKeyExW(HKEY_CURRENT_USER, path, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
-            const auto code = RegDeleteValueW(key, kVerification ? L"WarmCalendarVerification" : L"WarmCalendar");
+            const auto code = RegDeleteValueW(key, kStartupName);
             RegCloseKey(key);
             if (code != ERROR_SUCCESS && code != ERROR_FILE_NOT_FOUND) winrt::check_win32(code);
           }

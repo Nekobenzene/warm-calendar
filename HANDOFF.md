@@ -1,6 +1,45 @@
 # 日程表交接
 
-更新于2026-10-29。项目 `D:\projects\日程表`，Flutter/Dart，Git主分支main，远端为 https://github.com/Nekobenzene/warm-calendar 。当前版本0.5.0+5。历史记录存于 `verification/HANDOFF-before-0.5.md`，其中旧限制不代表当前状态。界面规范见 `DESIGN.md`，数据来源见 `THIRD_PARTY.md`。
+更新于2026-11-04。项目 `D:\projects\日程表`，Flutter/Dart，Git主分支main，远端为 https://github.com/Nekobenzene/warm-calendar 。当前正式源码为0.6.0+7。历史记录存于 `verification/HANDOFF-before-0.5.md`，其中旧限制不代表当前状态。界面规范见 `DESIGN.md`，数据来源见 `THIRD_PARTY.md`。
+
+## 本轮0.6.0正式发布与本机升级
+
+用户已确认预览无问题，明确授权推送、发布及更新本机为0.6.0（已确认不是0.0.6）。pubspec.yaml和lib/version.dart同步为正式版本，Android构建号7；正式版继续用原包名、数据库、设备凭据、Windows通知身份和4280同步端口。独立预览及其数据保留，正式版不自动导入预览日程。
+
+- 正式Windows、安装向导和APK重新构建；5项更新模块相关测试及静态分析通过，见`verification/*-0.6-release.log`。完整功能的56项相关Flutter测试、10项服务测试及收尾14项复查沿用下方记录，没有重新跑无关全套。
+- APK实际核对包名`com.tangtang.warm_calendar`、版本0.6.0/code7、名称“日程表”；证书SHA256仍为原发布证书fe006cfdf4c4bb284b7ecfd7c6ba47572329bc5d335811fd337f63b63ef733ed，可覆盖旧正式版。
+- 本机原`%LOCALAPPDATA%/Programs/WarmCalendar`已通过安装向导升级为0.6.0并重新运行。保留原安装目录、快捷方式配置及自启动选择；没有编辑/导入/清理个人日程。日志确认安装成功，卸载记录显示0.6.0，已安装主程序哈希与正式构建一致，见`verification/install-official-0.6.log`及`installed-official-0.6.json`。
+- 正式附件在`dist/releases/0.6.0/`，仅Windows安装器、Android APK、SHA256SUMS.txt。发布说明`releases/0.6.0.md`，版本标签v0.6.0，发布入口 https://github.com/Nekobenzene/warm-calendar/releases/tag/v0.6.0 。源码/标签推送main，安装包仅上传Release，不提交工具、凭据、密钥、个人数据库及验证记录。
+- Windows应用与安装器仍无受信任代码签名。Android真机通知及从应用内下载到安装完成的完整升级流程仍待实机验收；本机本次验证的是安装器从0.5.0升级至0.6.0。
+
+以下为先前独立预览阶段记录；其中“尚未发布”“未提交”只描述当时状态。
+
+## 本轮0.6本地预览（优先于下方0.5历史说明）
+
+用户要求先交付本地预览，暂不发布。改动尚未提交/推送；没有修改正式安装目录，也没有触发 localhost 文件上传流程。安装包放在 `dist/previews/0.6.0-preview.1/`：`warm-calendar-0.6.0-preview.1-windows-x64-setup.exe`、`windows/warm_calendar.exe`、完整便携压缩包 `windows.zip`、独立 Android APK、校验清单及预览说明。本机已更新独立预览安装，默认开始菜单“日程表 · 本地预览”可打开；没有新增桌面快捷方式或开启自启动。
+
+- 更新：设置→关于提供自动检查、手动检查、下载/取消/重试/继续安装及百分比/MB进度。默认启动及每6小时查本仓库 GitHub 正式 latest；严格匹配平台附件、HTTPS仓库路径、尺寸和GitHub SHA256摘要，下载流校验后才调用安装。Windows复用现有代理设置；Android走FileProvider及系统安装来源授权，不能跳过系统确认。正式模式 Windows 用现有安装目录与 `/SILENT /UPDATE=1` 参数，安装完成重启。预览模式只下载，不执行升级，防止影响正式版。已只读核实v0.5.0资产命名及digest与解析器一致；不能从0.6预览降级到0.5。
+- 三种模式：不重复保留原表单；重复日程添加规则/默认假期入口；重复周期独立组标题、频率、左日期/右节点、开始/停止日期或轮数、全局备注。每日无左列；多日Day1起计，每周可切周一至周日，月按当月日期，短月缺日跳过。两列各自滚动，窄屏及大字保持保存/取消可见。
+- 节点最多96个，每个可编辑标题、起止日/时间、点型、全天、两色、备注、提醒次数/提前量/声音与假期策略；第一节点可编辑。新节点复用最后一个已添加节点除标题/备注外设置，生成新ID，不能继承旧实例key。允许跨日，节点时长≤周期（月循环按最短28天限制）；组最多10000个展开实例。
+- 每个周期节点按起点所属日归属。停止日期含当日起点；轮数含首轮，周名模式首轮可不足整周，假期跳过不补轮。新实例key为锚点日期加稳定nodeId，改时间仍保留单次处理状态；旧多时间点迁移保留legacyMinute key。删除/完成/改期沿用单次例外，整组边界调整只改变目标节点时长，其他节点独立设置保留，失败原子回滚。
+- 标题统一为组标题-节点标题，空节点标题用组标题；备注为节点备注、全局备注两行。列表及手机详情显示两行，系统提醒正文也包含组合备注与多久后/开始时间。
+- 七类假期：无视、跳过两者、仅跳过假期、仅跳过周末、仅两者、仅周末、仅假期；周末假期可归为其中一类，调休上班优先。依赖假期的规则遇未知年份拒绝保存，不悄悄过滤。纯周末规则可按星期计算。修改默认假期保留已偏离默认值的节点设置，节点仍可独立编辑。
+- 日历选中后有删除入口，手机Popover也有；重复继续询问单次/整个。点型为水平线与左侧下垂圆角标签，没有边界手柄，只能整体拖动和编辑；拖动原位只留选中框，目标仍为线/标签。点型不制造虚假一分钟冲突。时间轴新增12/24像素每小时档、120分钟分度，最小档随可用视窗容纳24小时。
+- Surface改用Material描边底板，修正ListTile点击反馈被底色遮住的问题。没有改主题风格。
+- 同步服务支持组合标题/备注和完整节点规则。单记录≤1.5MiB，请求/响应按约1.8MiB分批，仍最多100项，避免多节点备注较长时同步卡住；旧协议2兼容。Android后台排提醒也载入已缓存的假期表。
+
+### 预览身份与验证
+
+- `lib/version.dart`维护版本及预览身份；包含`-preview`的版本自动使用独立`warm_calendar_preview`数据库、预览凭据。Windows C++按FLUTTER_VERSION选择独立Preview互斥；通知AUMID为`WarmCalendar.Planner.Preview`，激活CLSID尾号8812，自启动键`WarmCalendarPreview`，不再复用旧Verification身份。本机服务独立4281端口及`sync-service-preview`目录。正式4280和数据库不变。
+- Android Gradle按版本自动生成 `com.tangtang.warm_calendar.preview`、名称“日程表·预览”，可与正式版并存；后台与前台使用同一预览数据库/凭据。APK经aapt核对实际包名/版本，签名SHA256仍为下文原密钥。未连接Android真机，不宣称系统安装、更新、声音/振动实机验收。
+- `verification/tests-0.6-final.log`：56项相关Flutter测试通过（新重复/更新/UI与旧重复/日历交互/手机布局/提醒/同步），没有重跑无关全套。真实本地HTTP流下载覆盖进度、缓存、坏摘要及残留清理，安装调用使用假实现，不执行真实升级。
+- `verification/sync-server-0.6.log`：10项服务端测试通过，包含96个长备注节点、字节分页及组合文本。
+- `verification/analyze-0.6-final.log`：No issues found。Web/Windows/Android release构建分别见build-*-0.6.log。收尾修复后仅重跑提醒及本轮UI两个相关测试文件，14项通过（与前述56项有重叠，不相加），见`tests-0.6-notification-fix.log`；Windows及APK重新编译。
+- Windows独立预览安装器已实际运行并退出0，安装目录`%LOCALAPPDATA%/Programs/WarmCalendarPreview`，记录见`verification/install-preview-0.6.log`；只选择开始菜单快捷方式，未开自启动。只读核对正式安装记录仍为0.5.0及原目录。未执行真实版本升级；Windows/Android更新安装流程仍待端到端验收。
+- 首次通知修复：安装快捷方式本身并未解决`permission: 0x80070490`。已确认Windows在应用首次发通知前可能尚无对应通知状态项；只对Setting查询的ERROR_NOT_FOUND返回`unregistered`（界面“待首次通知确认”），不中断托盘或排队初始化，其他错误仍抛出。应用明确设置进程AUMID及有效图标路径。全新Preview身份启动没有初始化错误；从应用内发测试提醒后，系统权限为Enabled，Windows通知历史含该测试内容及提示音XML，见`verification/preview-notification-native.log`。这不等同于已听到提示音或观察到横幅，也未重新验收所有定时场景。
+- 实际网页在独立4183端口查看1280×800桌面周期编辑和390×844手机节点表单，保存按钮与主要字段均可见，浏览器无错误日志；截图 `verification/preview-06-cycle.png`、`verification/preview-06-mobile-node.jpg`。未上传文件或向正式4173写数据。临时网页草稿未保存并关闭；Windows独立预览窗口保留供查看。已安装主程序哈希与交付包一致（`verification/installed-preview-0.6.json`）。
+
+复现构建：`scripts/build-desktop.ps1 -OutputDirectory dist/previews/0.6.0-preview.1/windows`；`scripts/build-android.ps1 -OutputPath dist/previews/0.6.0-preview.1/warm-calendar-0.6.0-preview.1-android.apk`。正式发布前同时更新pubspec.yaml和lib/version.dart，去掉preview标识，再验证真实安装升级；不要将此便携预览当正式Release附件。
 
 ## 仓库、发布与本机更新
 

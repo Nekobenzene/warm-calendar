@@ -7,6 +7,8 @@ import 'color_picker.dart';
 import 'repeat_editor.dart';
 import 'reminder_editor.dart';
 import '../domain/reminders.dart';
+import 'cycle_editor.dart';
+import 'holiday_policy_field.dart';
 
 class EventEditor extends StatefulWidget {
   final AppController controller;
@@ -37,6 +39,8 @@ class _EventEditorState extends State<EventEditor> {
   late List<int> _reminders;
   late bool _reminderSound;
   RecurrenceRule? _rule;
+  late int _mode;
+  ScheduleEvent? _cycleDraft;
   bool _saving = false;
   String? _error;
   Duration get _shift =>
@@ -78,6 +82,15 @@ class _EventEditorState extends State<EventEditor> {
     _reminders = e == null ? [10] : e.reminderOffsets.toList();
     _reminderSound = e?.reminderSound ?? true;
     _rule = e?.recurrence;
+    _mode = _rule == null
+        ? 0
+        : _rule!.kind == RepeatKind.cycle
+        ? 2
+        : 1;
+    if (_mode == 2) _cycleDraft = e;
+    if (_rule?.nodes.isNotEmpty == true && _mode == 1) {
+      _applyFirstNode(_rule!.nodes.first, start);
+    }
     _ruleMinute = start.hour * 60 + start.minute;
   }
 
@@ -225,6 +238,41 @@ class _EventEditorState extends State<EventEditor> {
           : [for (final m in old.minutes) m == _ruleMinute ? minute : m],
       holidayPolicy: old?.holidayPolicy ?? HolidayPolicy.ignore,
       shiftMinutes: _shift.inMinutes,
+      cycleCount: old?.cycleCount,
+      weekendHolidayPriority:
+          old?.weekendHolidayPriority ?? WeekendHolidayPriority.holiday,
+      nodes: old == null || old.nodes.isEmpty
+          ? const []
+          : [
+              for (var i = 0; i < old.nodes.length; i++)
+                i != 0
+                    ? old.nodes[i]
+                    : RecurrenceNode(
+                        id: old.nodes[i].id,
+                        title: old.nodes[i].title,
+                        notes: old.nodes[i].notes,
+                        minute: _allDay ? 0 : minute,
+                        durationMinutes: (_point && !_allDay)
+                            ? 0
+                            : _combine(_endDate, _endTime)
+                                  .add(
+                                    _allDay
+                                        ? const Duration(days: 1)
+                                        : Duration.zero,
+                                  )
+                                  .difference(start)
+                                  .inMinutes,
+                        allDay: _allDay,
+                        color: _color,
+                        completedColor: _doneColor,
+                        reminderOffsets: _reminders,
+                        reminderSound: _reminderSound,
+                        holidayPolicy: old.nodes[i].holidayPolicy,
+                        weekendHolidayPriority:
+                            old.nodes[i].weekendHolidayPriority,
+                        legacyMinute: old.nodes[i].legacyMinute,
+                      ),
+            ],
     );
   }
 
@@ -232,6 +280,7 @@ class _EventEditorState extends State<EventEditor> {
     if (frequency == null) {
       setState(() {
         _rule = null;
+        _mode = 0;
       });
       return;
     }
@@ -254,15 +303,147 @@ class _EventEditorState extends State<EventEditor> {
       start: start,
       end: end,
       allDay: _allDay,
+      template: ScheduleEvent(
+        id: 'draft',
+        title: _title.text.trim().isEmpty ? '日程' : _title.text.trim(),
+        start: start,
+        end: end,
+        updatedAt: widget.controller.now,
+        allDay: _allDay,
+        color: _color,
+        completedColor: _doneColor,
+        reminderOffsets: _reminders,
+        reminderSound: _reminderSound,
+      ),
     );
     if (mounted) {
       setState(() {
         if (result != null) {
           _rule = result;
-          _ruleMinute = start.hour * 60 + start.minute;
+          _mode = 1;
+          if (result.nodes.isNotEmpty) {
+            _applyFirstNode(result.nodes.first, start);
+          }
+          _ruleMinute =
+              result.nodes.firstOrNull?.minute ??
+              start.hour * 60 + start.minute;
         }
       });
     }
+  }
+
+  void _applyFirstNode(RecurrenceNode node, DateTime day) {
+    final start = DateTime(
+      day.year,
+      day.month,
+      day.day + node.dayOffset,
+      0,
+      node.minute,
+    );
+    final end = start
+        .add(Duration(minutes: node.durationMinutes))
+        .subtract(node.allDay ? const Duration(days: 1) : Duration.zero);
+    _startDate.text = dateKey(start);
+    _endDate.text = dateKey(end);
+    _startTime.text = clockText(start);
+    _endTime.text = clockText(end);
+    _point = node.isPoint;
+    _allDay = node.allDay;
+    _color = node.color;
+    _doneColor = node.completedColor;
+    _reminders = node.reminderOffsets.toList();
+    _reminderSound = node.reminderSound;
+  }
+
+  void _setMode(int mode, [ScheduleEvent? cycle]) {
+    if (mode == _mode) return;
+    setState(() {
+      if (cycle != null) {
+        _cycleDraft = cycle;
+        _title.text = cycle.title;
+        _notes.text = cycle.notes;
+        if (cycle.recurrence!.nodes.isNotEmpty) {
+          _applyFirstNode(
+            cycle.recurrence!.nodes.first,
+            cycle.start.subtract(_shift),
+          );
+        }
+        _rule = null;
+      }
+      if (mode == 2) {
+        final start = _combine(_startDate, _startTime);
+        final previous = _cycleDraft?.recurrence;
+        final formRule = _draftRule(
+          _rule?.frequency ?? RepeatFrequency.daily,
+          start,
+        );
+        final draftRule = previous == null
+            ? _rule
+            : previous.copyWith(
+                nodes: [
+                  if (previous.nodes.isNotEmpty)
+                    RecurrenceNode(
+                      id: previous.nodes.first.id,
+                      title: previous.nodes.first.title,
+                      notes: previous.nodes.first.notes,
+                      dayOffset: previous.nodes.first.dayOffset,
+                      minute: _allDay ? 0 : start.hour * 60 + start.minute,
+                      durationMinutes: (_point && !_allDay)
+                          ? 0
+                          : _combine(_endDate, _endTime)
+                                .add(
+                                  _allDay
+                                      ? const Duration(days: 1)
+                                      : Duration.zero,
+                                )
+                                .difference(start)
+                                .inMinutes,
+                      allDay: _allDay,
+                      color: _color,
+                      completedColor: _doneColor,
+                      reminderOffsets: _reminders,
+                      reminderSound: _reminderSound,
+                      holidayPolicy: previous.nodes.first.holidayPolicy,
+                      weekendHolidayPriority:
+                          previous.nodes.first.weekendHolidayPriority,
+                      legacyMinute: previous.nodes.first.legacyMinute,
+                    ),
+                  ...previous.nodes.skip(1),
+                ],
+              );
+        _cycleDraft = ScheduleEvent(
+          id:
+              widget.event?.id ??
+              '${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(99999)}',
+          title: _title.text,
+          notes: _notes.text,
+          start: start.add(_shift),
+          end:
+              (_point && !_allDay
+                      ? start
+                      : _combine(_endDate, _endTime).add(
+                          _allDay ? const Duration(days: 1) : Duration.zero,
+                        ))
+                  .add(_shift),
+          allDay: _allDay,
+          updatedAt: DateTime.now().toUtc(),
+          recurrence: draftRule ?? (_mode == 1 ? formRule : null),
+          color: _color,
+          completedColor: _doneColor,
+          reminderOffsets: _reminders,
+          reminderSound: _reminderSound,
+          revision: widget.event?.revision ?? 0,
+        );
+      } else if (mode == 0) {
+        _rule = null;
+      } else {
+        _rule ??= _draftRule(
+          RepeatFrequency.daily,
+          _combine(_startDate, _startTime),
+        );
+      }
+      _mode = mode;
+    });
   }
 
   static const _repeatLabels = {
@@ -271,38 +452,42 @@ class _EventEditorState extends State<EventEditor> {
     RepeatFrequency.monthly: '每月',
     RepeatFrequency.interval: '每隔几日',
   };
+  String get _ruleSummary =>
+      '${_rule!.nodes.isEmpty ? _rule!.minutes.length : _rule!.nodes.length}个节点 · ${_rule!.cycleCount == null ? '至${dateKey(_rule!.until)}' : '${_rule!.cycleCount}轮'}${_shift == Duration.zero ? '' : ' · 整体偏移${_shift.inMinutes}分钟'}';
   ButtonStyle get _optionStyle => OutlinedButton.styleFrom(
     minimumSize: const Size(0, 40),
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
     alignment: Alignment.centerLeft,
   );
-  Widget _repeatControl() => MenuAnchor(
-    menuChildren: [
-      if (_rule != null)
-        MenuItemButton(
-          onPressed: () => _configureRepeat(_rule!.frequency),
-          child: const Text('编辑重复规则'),
-        ),
-      MenuItemButton(
-        onPressed: () => _configureRepeat(null),
-        child: const Text('不重复'),
-      ),
-      for (final entry in _repeatLabels.entries)
-        MenuItemButton(
-          onPressed: () => _configureRepeat(entry.key),
-          child: Text(entry.value),
-        ),
-    ],
-    builder: (context, menu, child) => OutlinedButton.icon(
-      key: const ValueKey('event-repeat'),
-      style: _optionStyle,
-      onPressed: _saving
-          ? null
-          : () => menu.isOpen ? menu.close() : menu.open(),
-      icon: const Icon(Icons.repeat, size: 17),
-      label: Text('重复 · ${_repeatLabels[_rule?.frequency] ?? '不重复'}'),
-    ),
-  );
+  Widget _repeatControl() => _mode == 0
+      ? const SizedBox.shrink()
+      : MenuAnchor(
+          menuChildren: [
+            if (_rule != null)
+              MenuItemButton(
+                onPressed: () => _configureRepeat(_rule!.frequency),
+                child: const Text('编辑重复规则'),
+              ),
+            MenuItemButton(
+              onPressed: () => _configureRepeat(null),
+              child: const Text('不重复'),
+            ),
+            for (final entry in _repeatLabels.entries)
+              MenuItemButton(
+                onPressed: () => _configureRepeat(entry.key),
+                child: Text(entry.value),
+              ),
+          ],
+          builder: (context, menu, child) => OutlinedButton.icon(
+            key: const ValueKey('event-repeat'),
+            style: _optionStyle,
+            onPressed: _saving
+                ? null
+                : () => menu.isOpen ? menu.close() : menu.open(),
+            icon: const Icon(Icons.repeat, size: 17),
+            label: Text('重复 · ${_repeatLabels[_rule?.frequency] ?? '不重复'}'),
+          ),
+        );
   Widget _reminderControl() => OutlinedButton.icon(
     key: const ValueKey('event-reminders'),
     style: _optionStyle,
@@ -430,7 +615,7 @@ class _EventEditorState extends State<EventEditor> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  '每日${_allDay ? 1 : _rule!.minutes.length}次 · 至${dateKey(_rule!.until)}${_shift == Duration.zero ? '' : ' · 整体偏移${_shift.inMinutes}分钟'}',
+                  _ruleSummary,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -450,10 +635,7 @@ class _EventEditorState extends State<EventEditor> {
           ],
           if (_rule != null) ...[
             const SizedBox(height: 8),
-            Text(
-              '每日${_allDay ? 1 : _rule!.minutes.length}次 · 至${dateKey(_rule!.until)}${_shift == Duration.zero ? '' : ' · 整体偏移${_shift.inMinutes}分钟'}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            Text(_ruleSummary, style: Theme.of(context).textTheme.bodySmall),
           ],
         ],
       );
@@ -501,6 +683,7 @@ class _EventEditorState extends State<EventEditor> {
               : _draftRule(_rule!.frequency, baseStart),
           seriesId: original?.seriesId,
           occurrenceKey: original?.occurrenceKey,
+          nodeId: original?.nodeId,
           color: _color,
           completedColor: _doneColor,
         ),
@@ -519,196 +702,263 @@ class _EventEditorState extends State<EventEditor> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: !_saving,
-    child: Dialog(
-      insetPadding: EdgeInsets.all(
-        MediaQuery.sizeOf(context).width < 600 ? 8 : 16,
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 660),
-        child: Padding(
-          padding: EdgeInsets.all(
-            MediaQuery.sizeOf(context).width < 600 ? 16 : 20,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.event == null ? '新建日程' : '编辑日程',
-                      style: Theme.of(context).textTheme.titleLarge,
+  Widget build(BuildContext context) {
+    if (_mode == 2) {
+      return CycleEditor(
+        controller: widget.controller,
+        initial: _cycleDraft!,
+        onMode: (mode, draft) => _setMode(mode, draft),
+      );
+    }
+    return PopScope(
+      canPop: !_saving,
+      child: Dialog(
+        insetPadding: EdgeInsets.all(
+          MediaQuery.sizeOf(context).width < 600 ? 8 : 16,
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 660),
+          child: Padding(
+            padding: EdgeInsets.all(
+              MediaQuery.sizeOf(context).width < 600 ? 16 : 20,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.event == null ? '新建日程' : '编辑日程',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: '关闭',
-                    onPressed: _saving ? null : () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, size: 21),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: SingleChildScrollView(
-                  key: const ValueKey('event-form-scroll'),
-                  child: Form(
-                    key: _form,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        TextFormField(
-                          controller: _title,
-                          autofocus: MediaQuery.sizeOf(context).width >= 600,
-                          maxLength: 120,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: '标题',
-                            counterText: '',
+                    IconButton(
+                      tooltip: '关闭',
+                      onPressed: _saving ? null : () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, size: 21),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: SingleChildScrollView(
+                    key: const ValueKey('event-form-scroll'),
+                    child: Form(
+                      key: _form,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (widget.event?.seriesId == null) ...[
+                            repeatModeSelector(_mode, _setMode),
+                            const SizedBox(height: 12),
+                          ],
+                          TextFormField(
+                            controller: _title,
+                            autofocus: MediaQuery.sizeOf(context).width >= 600,
+                            maxLength: widget.event?.nodeId == null ? 120 : 241,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: '标题',
+                              counterText: '',
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? '请输入日程标题'
+                                : null,
                           ),
-                          validator: (v) =>
-                              v == null || v.trim().isEmpty ? '请输入日程标题' : null,
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 4,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text('全天'),
-                                const SizedBox(width: 4),
-                                Semantics(
-                                  label: '全天日程',
-                                  child: Switch(
-                                    value: _allDay,
-                                    onChanged: _saving
-                                        ? null
-                                        : (v) => setState(() {
-                                            _allDay = v;
-                                            if (v) _point = false;
-                                          }),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text('全天'),
+                                  const SizedBox(width: 4),
+                                  Semantics(
+                                    label: '全天日程',
+                                    child: Switch(
+                                      value: _allDay,
+                                      onChanged: _saving
+                                          ? null
+                                          : (v) => setState(() {
+                                              _allDay = v;
+                                              if (v) _point = false;
+                                            }),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (!_allDay)
+                                InkWell(
+                                  onTap: () => setState(() => _point = !_point),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Checkbox(
+                                        value: _point,
+                                        onChanged: (v) =>
+                                            setState(() => _point = v!),
+                                      ),
+                                      Text(
+                                        MediaQuery.sizeOf(context).width < 600
+                                            ? '仅时间点'
+                                            : '仅时间点（无时长）',
+                                        style: TextStyle(fontSize: 13),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ],
-                            ),
-                            if (!_allDay)
-                              InkWell(
-                                onTap: () => setState(() => _point = !_point),
+                              SizedBox(
+                                width: min(
+                                  248 *
+                                      MediaQuery.textScalerOf(context).scale(1),
+                                  min(
+                                        660,
+                                        MediaQuery.sizeOf(context).width - 32,
+                                      ) -
+                                      40,
+                                ),
                                 child: Row(
-                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Checkbox(
-                                      value: _point,
-                                      onChanged: (v) =>
-                                          setState(() => _point = v!),
-                                    ),
-                                    Text(
-                                      MediaQuery.sizeOf(context).width < 600
-                                          ? '仅时间点'
-                                          : '仅时间点（无时长）',
-                                      style: TextStyle(fontSize: 13),
-                                    ),
+                                    Expanded(child: _colorButton(false)),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: _colorButton(true)),
                                   ],
                                 ),
                               ),
-                            SizedBox(
-                              width: min(
-                                248 * MediaQuery.textScalerOf(context).scale(1),
-                                min(
-                                      660,
-                                      MediaQuery.sizeOf(context).width - 32,
-                                    ) -
-                                    40,
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(child: _colorButton(false)),
-                                  const SizedBox(width: 8),
-                                  Expanded(child: _colorButton(true)),
-                                ],
-                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          _dates(),
+                          if (_mode == 1 && _rule != null) ...[
+                            const SizedBox(height: 12),
+                            HolidayPolicyField(
+                              label: '默认节假日设置',
+                              policy: _rule!.holidayPolicy,
+                              priority: _rule!.weekendHolidayPriority,
+                              onChanged: (p, w) => setState(() {
+                                final old = _rule!;
+                                _rule = RecurrenceRule(
+                                  frequency: old.frequency,
+                                  until: old.until,
+                                  intervalDays: old.intervalDays,
+                                  weekdays: old.weekdays,
+                                  monthDays: old.monthDays,
+                                  minutes: old.minutes,
+                                  shiftMinutes: old.shiftMinutes,
+                                  cycleCount: old.cycleCount,
+                                  holidayPolicy: p,
+                                  weekendHolidayPriority: w,
+                                  nodes: [
+                                    for (final n in old.nodes)
+                                      n.holidayPolicy != old.holidayPolicy ||
+                                              n.weekendHolidayPriority !=
+                                                  old.weekendHolidayPriority
+                                          ? n
+                                          : RecurrenceNode(
+                                              id: n.id,
+                                              title: n.title,
+                                              notes: n.notes,
+                                              dayOffset: n.dayOffset,
+                                              minute: n.minute,
+                                              durationMinutes:
+                                                  n.durationMinutes,
+                                              allDay: n.allDay,
+                                              color: n.color,
+                                              completedColor: n.completedColor,
+                                              reminderOffsets:
+                                                  n.reminderOffsets,
+                                              reminderSound: n.reminderSound,
+                                              holidayPolicy: p,
+                                              weekendHolidayPriority: w,
+                                              legacyMinute: n.legacyMinute,
+                                            ),
+                                  ],
+                                );
+                              }),
                             ),
                           ],
-                        ),
-                        const SizedBox(height: 8),
-                        _dates(),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _notes,
-                          minLines: 2,
-                          maxLines: 3,
-                          maxLength: 4000,
-                          decoration: const InputDecoration(
-                            labelText: '备注',
-                            counterText: '',
-                            alignLabelWithHint: true,
-                          ),
-                        ),
-                        if (_error != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: Semantics(
-                              liveRegion: true,
-                              child: Text(
-                                _error!,
-                                style: const TextStyle(color: AppColors.danger),
-                              ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _notes,
+                            minLines: 2,
+                            maxLines: 3,
+                            maxLength: widget.event?.nodeId == null
+                                ? 4000
+                                : 8001,
+                            decoration: const InputDecoration(
+                              labelText: '备注',
+                              counterText: '',
+                              alignLabelWithHint: true,
                             ),
                           ),
-                      ],
+                          if (_error != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: Semantics(
+                                liveRegion: true,
+                                child: Text(
+                                  _error!,
+                                  style: const TextStyle(
+                                    color: AppColors.danger,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                runSpacing: 4,
-                children: [
-                  if (widget.event != null && _rule == null)
+                const SizedBox(height: 16),
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  runSpacing: 4,
+                  children: [
+                    if (widget.event != null && _rule == null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: _completed,
+                            onChanged: _saving
+                                ? null
+                                : (v) => setState(() => _completed = v!),
+                          ),
+                          const Text('已完成'),
+                        ],
+                      )
+                    else
+                      const SizedBox.shrink(),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Checkbox(
-                          value: _completed,
-                          onChanged: _saving
+                        TextButton(
+                          onPressed: _saving
                               ? null
-                              : (v) => setState(() => _completed = v!),
+                              : () => Navigator.pop(context),
+                          child: const Text('取消'),
                         ),
-                        const Text('已完成'),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _saving ? null : _save,
+                          child: Text(_saving ? '保存中…' : '保存日程'),
+                        ),
                       ],
-                    )
-                  else
-                    const SizedBox.shrink(),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextButton(
-                        onPressed: _saving
-                            ? null
-                            : () => Navigator.pop(context),
-                        child: const Text('取消'),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: _saving ? null : _save,
-                        child: Text(_saving ? '保存中…' : '保存日程'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }

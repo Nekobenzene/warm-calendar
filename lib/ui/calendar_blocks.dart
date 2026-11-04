@@ -4,6 +4,69 @@ import 'theme.dart';
 
 enum CalendarEditMode { move, start, end }
 
+class PointEventMarker extends StatelessWidget {
+  final Color color;
+  final String? title;
+  final Key? tagKey;
+  final bool phone;
+  const PointEventMarker({
+    super.key,
+    required this.color,
+    this.title,
+    this.tagKey,
+    this.phone = false,
+  });
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Positioned(
+        left: 0,
+        right: 0,
+        top: 0,
+        height: 2,
+        child: ColoredBox(color: color),
+      ),
+      Positioned(
+        left: 4,
+        top: 1,
+        width: 1,
+        height: 7,
+        child: ColoredBox(color: color),
+      ),
+      Positioned(
+        left: 0,
+        top: 6,
+        width: phone ? 24 : 30,
+        bottom: 0,
+        child: DecoratedBox(
+          key: tagKey,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Icon(
+            Icons.schedule,
+            size: 12,
+            color: blockText(color.toARGB32()),
+          ),
+        ),
+      ),
+      if (title != null)
+        Positioned(
+          left: 34,
+          right: 2,
+          top: 5,
+          child: Text(
+            title!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 10),
+          ),
+        ),
+    ],
+  );
+}
+
 /// Dismiss only on a real tap, without competing with scroll or double tap.
 class ScrollSafeTapRegion extends StatefulWidget {
   final Widget child;
@@ -44,7 +107,7 @@ class _ScrollSafeTapRegionState extends State<ScrollSafeTapRegion> {
 
 /// Selected blocks claim one pointer; two-pointer zoom is handled by the axis.
 class CalendarEventInteraction extends StatefulWidget {
-  final bool selected, enabled, locked, phone, resizable;
+  final bool selected, enabled, locked, phone, resizable, point;
   final VoidCallback onTap, onLongPress, onEnd, onCancel;
   final ValueChanged<CalendarEditMode> onStart;
   final ValueChanged<DragUpdateDetails> onUpdate;
@@ -56,6 +119,7 @@ class CalendarEventInteraction extends StatefulWidget {
     required this.locked,
     required this.phone,
     required this.resizable,
+    this.point = false,
     required this.onTap,
     required this.onLongPress,
     required this.onStart,
@@ -103,14 +167,21 @@ class _CalendarEventInteractionState extends State<CalendarEventInteraction> {
               fit: StackFit.expand,
               children: [
                 widget.child,
-                IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: context.appColors.accent,
-                        width: 2,
+                Positioned(
+                  left: 0,
+                  right: widget.point ? null : 0,
+                  top: widget.point ? 6 : 0,
+                  bottom: 0,
+                  width: widget.point ? (widget.phone ? 24 : 30) : null,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: context.appColors.accent,
+                          width: 2,
+                        ),
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
                 ),

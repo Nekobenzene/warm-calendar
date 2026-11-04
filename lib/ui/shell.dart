@@ -12,6 +12,7 @@ import 'link_page.dart';
 import 'motion.dart';
 import 'appearance.dart';
 import 'scroll_feedback.dart';
+import 'update_panel.dart';
 
 class AppShell extends StatefulWidget {
   final AppController controller;
@@ -388,6 +389,7 @@ class _AppShellState extends State<AppShell> {
                               ),
                             ),
                             const Divider(),
+                            UpdatePanel(controller: c, compact: true),
                             if (c.dueReminders.isNotEmpty) _reminderBanner(c),
                             if (c.notificationError != null)
                               Padding(

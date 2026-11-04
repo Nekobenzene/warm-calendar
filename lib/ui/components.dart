@@ -17,14 +17,13 @@ class Surface extends StatelessWidget {
     this.borderColor,
   });
   @override
-  Widget build(BuildContext context) => Container(
-    padding: padding,
-    decoration: BoxDecoration(
-      color: context.appColors.surface,
-      border: Border.all(color: borderColor ?? context.appColors.border),
+  Widget build(BuildContext context) => Material(
+    color: context.appColors.surface,
+    shape: RoundedRectangleBorder(
+      side: BorderSide(color: borderColor ?? context.appColors.border),
       borderRadius: BorderRadius.circular(10),
     ),
-    child: child,
+    child: Padding(padding: padding, child: child),
   );
 }
 
@@ -191,7 +190,7 @@ class EventRow extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
                         event.notes,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall,
                       ),

@@ -13,14 +13,19 @@ import 'sync/link_credentials.dart';
 import 'sync/sync_store.dart';
 import 'sync/background_sync.dart';
 import 'sync/local_relay.dart';
+import 'version.dart';
 
 void main(List<String> args) {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) SemanticsBinding.instance.ensureSemantics();
-  final verification = args.contains('--verification');
+  final verification = args.contains('--verification') || isLocalPreview;
   final db = CalendarDatabase(
     null,
-    verification ? 'warm_calendar_verification' : 'warm_calendar',
+    isLocalPreview
+        ? appDatabaseName
+        : verification
+        ? 'warm_calendar_verification'
+        : appDatabaseName,
   );
   initializeBackgroundSync().catchError((Object e) {
     debugPrint('Background sync initialization failed: $e');
@@ -33,9 +38,11 @@ void main(List<String> args) {
           prepareServer: resumeLocalRelay,
           store: SqliteSyncStore(db),
           credentials: SecureLinkCredentials(
-            key: verification
+            key: isLocalPreview
+                ? appCredentialKey
+                : verification
                 ? 'warm-calendar-device-verification'
-                : 'warm-calendar-device',
+                : appCredentialKey,
           ),
           platform: kIsWeb
               ? 'web'
@@ -46,7 +53,7 @@ void main(List<String> args) {
         calendar: CalendarService(),
         notifications: createNotificationService(
           startHidden: args.contains('--tray'),
-          verification: args.contains('--verification'),
+          verification: verification,
         ),
       ),
     ),

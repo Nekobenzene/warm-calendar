@@ -162,6 +162,23 @@ test('相同上传可重试且分页不会遗漏超过100项的数据', async t 
   await call('/v1/sync', desktop.credential, { cursor: 0, events: [event('bad', { title: '' })] }, 400);
 });
 
+test('96个独立节点及组合文本可同步，大记录分页不超过请求上限', async t => {
+  const { call, register } = await fixture(t);
+  const desktop = await register();
+  const nodes = Array.from({ length: 96 }, (_, i) => ({ id: 'n' + i, title: '节点' + i, notes: '字'.repeat(4000), minute: i, dayOffset: 0, durationMinutes: 0,
+    reminderOffsets: [30, 0], holidayPolicy: 'skipWeekends', color: 0x80aabbcc, completedColor: 0xffaaaaaa }));
+  for (const id of ['large-a', 'large-b']) await call('/v1/sync', desktop.credential, { cursor: 0, events: [event(id, { recurrence: { kind: 'cycle', nodes } })] });
+  const first = await call('/v1/sync', desktop.credential, { cursor: 0, events: [] });
+  assert.equal(first.events.length, 1); assert.equal(first.hasMore, true);
+  assert.deepEqual(first.events[0].recurrence.nodes, nodes);
+  const next = await call('/v1/sync', desktop.credential, { cursor: first.cursor, groupId: first.groupId, events: [] });
+  assert.equal(next.events.length, 1); assert.equal(next.hasMore, false);
+  assert.notEqual(first.events[0].id, next.events[0].id);
+  const exception = event('instance', { nodeId: 'n0', title: '组'.repeat(120) + '-' + '节'.repeat(120), notes: '节'.repeat(4000) + '\n' + '组'.repeat(4000) });
+  const result = await call('/v1/sync', desktop.credential, { cursor: next.cursor, groupId: next.groupId, events: [exception] });
+  assert.equal(result.events[0].title, exception.title); assert.equal(result.events[0].notes, exception.notes);
+});
+
 test('服务重启后设备和日程持久保留；撤销凭据后不可访问', async t => {
   const folder = mkdtempSync(join(tmpdir(), 'warm-calendar-sync-test-'));
   const database = join(folder, 'calendar.sqlite');

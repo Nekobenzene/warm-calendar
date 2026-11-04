@@ -77,12 +77,12 @@ export function createSyncServer({ database = ':memory:', allowedOrigins = [], n
   }
   function validateEvent(e) {
     requireValue(e && typeof e === 'object' && !Array.isArray(e) && typeof e.id === 'string' && e.id.length > 0 && e.id.length <= 512, 400, '日程ID无效');
-    requireValue(typeof e.title === 'string' && e.title.trim().length > 0 && e.title.length <= 120 &&
-      (e.notes == null || typeof e.notes === 'string' && e.notes.length <= 4000) &&
+    requireValue(typeof e.title === 'string' && e.title.trim().length > 0 && e.title.length <= (e.nodeId ? 241 : 120) &&
+      (e.notes == null || typeof e.notes === 'string' && e.notes.length <= (e.nodeId ? 8001 : 4000)) &&
       Number.isFinite(Date.parse(e.start)) && Number.isFinite(Date.parse(e.end)) &&
       Number.isFinite(Date.parse(e.updatedAt)) && Number.isSafeInteger(e.revision) && e.revision >= 0, 400, '日程格式无效');
     const json = JSON.stringify(e);
-    requireValue(Buffer.byteLength(json) <= 65536, 400, '单项日程过大');
+    requireValue(Buffer.byteLength(json) <= 1536 * 1024, 400, '单项日程过大');
     return json;
   }
   const server = createServer(async (request, response) => {
@@ -234,11 +234,16 @@ export function createSyncServer({ database = ':memory:', allowedOrigins = [], n
           const current = get('SELECT sequence FROM groups WHERE id=?', device.group_id).sequence;
           const cursor = input.groupId === device.group_id ? Math.min(input.cursor, current) : 0;
           const rows = all('SELECT payload,sequence FROM events WHERE group_id=? AND sequence>? ORDER BY sequence LIMIT 101', device.group_id, cursor);
-          const page = rows.slice(0, 100);
+          const page = []; let pageBytes = 0;
+          for (const row of rows) {
+            const bytes = Buffer.byteLength(row.payload);
+            if (page.length === 100 || page.length > 0 && pageBytes + bytes > 1800 * 1024) break;
+            page.push(row); pageBytes += bytes;
+          }
           const preferences = get('SELECT auto_complete FROM group_settings WHERE group_id=?', device.group_id);
           return { settings: preferences ? { autoCompleteExpired: !!preferences.auto_complete } : null,
             groupId: device.group_id, cursor: page.length ? page.at(-1).sequence : current,
-            hasMore: rows.length > 100, events: page.map(r => JSON.parse(r.payload)), ...state(device) };
+            hasMore: rows.length > page.length, events: page.map(r => JSON.parse(r.payload)), ...state(device) };
         });
         send(200, output); return;
       }

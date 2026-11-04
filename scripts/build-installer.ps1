@@ -15,13 +15,16 @@ foreach ($taskRequired in @('warm_calendar.exe','flutter_windows.dll','data/app.
 }
 if (!$CompilerPath) { $CompilerPath = & "$PSScriptRoot/prepare-installer-tools.ps1" }
 if (!(Test-Path -LiteralPath $CompilerPath)) { throw '未找到 Inno Setup 编译器。' }
-$taskVersionMatch = [regex]::Match((Get-Content -LiteralPath (Join-Path $taskRoot 'pubspec.yaml') -Raw), '(?m)^version:\s*(\d+\.\d+\.\d+)')
+$taskVersionMatch = [regex]::Match((Get-Content -LiteralPath (Join-Path $taskRoot 'pubspec.yaml') -Raw), '(?m)^version:\s*(\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?)')
 if (!$taskVersionMatch.Success) { throw '无法读取版本。' }
 $taskVersion = $taskVersionMatch.Groups[1].Value
-$taskOutput = if ($TestBuild) { Join-Path $taskRoot 'verification/installer-build' } else { Join-Path $taskRoot 'dist' }
+$taskPreview = $taskVersion.Contains('-preview')
+$taskNumericVersion = $taskVersion -replace '-.*$', ''
+$taskOutput = if ($TestBuild) { Join-Path $taskRoot 'verification/installer-build' } elseif ($taskPreview) { Join-Path $taskRoot "dist/previews/$taskVersion" } else { Join-Path $taskRoot 'dist' }
 New-Item -ItemType Directory -Path $taskOutput -Force | Out-Null
-$taskArguments = @('/Qp',"/DPackageDir=$taskPackage","/DAppVersion=$taskVersion","/DOutputDir=$taskOutput")
+$taskArguments = @('/Qp',"/DPackageDir=$taskPackage","/DAppVersion=$taskVersion","/DAppVersionNumeric=$taskNumericVersion","/DOutputDir=$taskOutput")
 if ($TestBuild) { $taskArguments += '/DInstallerTest=1' }
+elseif ($taskPreview) { $taskArguments += '/DPreviewBuild=1' }
 # Sign application payload before embedding it. Never synthesize a self-signed publisher.
 & "$PSScriptRoot/sign-desktop.ps1" -PackageDirectory $taskPackage -CertificateThumbprint $CertificateThumbprint -MachineCertificateStore:$MachineCertificateStore -RequireTrustedSignature:$RequireTrustedSignature
 if ($CertificateThumbprint) {
@@ -36,7 +39,7 @@ if ($CertificateThumbprint) {
 $taskArguments += (Join-Path $taskRoot 'installer/calendar.iss')
 & $CompilerPath @taskArguments
 if ($LASTEXITCODE -ne 0) { throw '安装向导编译失败。' }
-$taskName = if ($TestBuild) { 'Calendar-Setup-Test.exe' } else { "日程表-Setup-$taskVersion-x64.exe" }
+$taskName = if ($TestBuild) { 'Calendar-Setup-Test.exe' } elseif ($taskPreview) { "warm-calendar-$taskVersion-windows-x64-setup.exe" } else { "日程表-Setup-$taskVersion-x64.exe" }
 $taskInstaller = Join-Path $taskOutput $taskName
 $taskSignature = Get-AuthenticodeSignature -LiteralPath $taskInstaller
 if (($RequireTrustedSignature -or $CertificateThumbprint) -and $taskSignature.Status -ne 'Valid') { throw '安装程序未获得有效签名。' }

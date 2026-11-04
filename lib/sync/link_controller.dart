@@ -335,7 +335,16 @@ class LinkController extends ChangeNotifier {
     // Bound each pass, then continue automatically on the next poll.
     for (var page = 0; page < 20; page++) {
       final position = await store.position();
-      final pending = await store.pending();
+      final available = await store.pending();
+      final pending = <PendingChange>[];
+      var payloadBytes = 0;
+      for (final change in available) {
+        final bytes = utf8.encode(jsonEncode(change.event.toJson())).length;
+        if (bytes > 1536 * 1024) throw const FormatException('单项日程过大，请减少节点备注');
+        if (pending.isNotEmpty && payloadBytes + bytes > 1800 * 1024) break;
+        pending.add(change);
+        payloadBytes += bytes;
+      }
       final preferences = await store.pendingPreferences();
       final result = await _call(
         '/v1/sync',
@@ -362,7 +371,11 @@ class LinkController extends ChangeNotifier {
       connection = result;
       lastSynced = DateTime.now();
       if (changed || settingsChanged) await onRemoteApplied?.call();
-      if (result['hasMore'] != true && pending.length < 100) break;
+      if (result['hasMore'] != true &&
+          available.length == pending.length &&
+          pending.length < 100) {
+        break;
+      }
     }
   }
 

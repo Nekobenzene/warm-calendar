@@ -7,6 +7,8 @@ import 'domain/models.dart';
 import 'domain/recurrence.dart';
 import 'domain/reminders.dart';
 import 'domain/holiday_update.dart';
+import 'domain/app_update.dart';
+import 'platform/update_platform.dart' as update_platform;
 import 'platform/notification_service.dart';
 import 'sync/link_controller.dart';
 
@@ -15,14 +17,26 @@ class AppController extends ChangeNotifier {
   final CalendarService calendar;
   final NotificationBackend notifications;
   final LinkController? link;
+  late final AppUpdateController updater;
   AppController({
     required this.repository,
     required this.calendar,
     NotificationBackend? notifications,
+    AppUpdateController? updates,
     this.link,
   }) : notifications = notifications ?? createNotificationService() {
     this.notifications.beforeExit = () => _writes;
     link?.onRemoteApplied = reloadSyncedEvents;
+    updater =
+        updates ??
+        AppUpdateController(
+          installer: (path) async {
+            await update_platform.installUpdate(path);
+            if (this.notifications.desktop) {
+              await this.notifications.exitForUpdate();
+            }
+          },
+        );
   }
   List<ScheduleEvent> _events = [];
   List<ScheduleEvent>? _resolvedEvents;
@@ -129,6 +143,12 @@ class AppController extends ChangeNotifier {
       await link?.initialize(startPolling: startTimer);
       if (startTimer) {
         _timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+          if (settings.autoCheckUpdates &&
+              (updater.lastAttempt == null ||
+                  DateTime.now().difference(updater.lastAttempt!) >
+                      const Duration(hours: 6))) {
+            unawaited(updater.check());
+          }
           unawaited(refreshTime());
         });
       }
@@ -138,6 +158,7 @@ class AppController extends ChangeNotifier {
     }
     loading = false;
     notifyListeners();
+    if (startTimer && settings.autoCheckUpdates) unawaited(updater.check());
     if (startTimer &&
         settings.autoUpdateHolidays &&
         DateTime.now().millisecondsSinceEpoch - settings.holidayCheckedAt >
@@ -238,6 +259,7 @@ class AppController extends ChangeNotifier {
         reminderSound: event.reminderSound,
         color: event.color,
         completedColor: event.completedColor,
+        nodeId: event.nodeId,
         updatedAt: event.updatedAt,
       );
       await _persistEvents([old!.copyWith(deleted: true), single]);
@@ -265,19 +287,29 @@ class AppController extends ChangeNotifier {
     final records = <ScheduleEvent>[];
     if (root != null) {
       final r = root.recurrence!;
-      final rule = RecurrenceRule(
-        frequency: r.frequency,
-        until: r.until,
-        intervalDays: r.intervalDays,
-        weekdays: r.weekdays,
-        monthDays: r.monthDays,
-        minutes: r.minutes,
-        holidayPolicy: r.holidayPolicy,
+      final rule = r.copyWith(
         shiftMinutes: r.shiftMinutes + delta.inMinutes,
+        nodes: r.nodes.isNotEmpty
+            ? [
+                for (final node in r.nodes)
+                  node.id == current.nodeId
+                      ? node.copyWith(
+                          durationMinutes:
+                              node.durationMinutes +
+                              endDelta.inMinutes -
+                              delta.inMinutes,
+                        )
+                      : node,
+              ]
+            : null,
       );
       final moved = root.copyWith(
         start: root.start.add(delta),
-        end: root.end.add(endDelta),
+        end: root.end.add(
+          r.nodes.isNotEmpty && r.nodes.first.id != current.nodeId
+              ? delta
+              : endDelta,
+        ),
         recurrence: rule,
       );
       expandSeries(moved, calendar, validate: true);
@@ -288,7 +320,11 @@ class AppController extends ChangeNotifier {
             .map(
               (e) => e.copyWith(
                 start: e.start.add(delta),
-                end: e.end.add(endDelta),
+                end: e.end.add(
+                  r.nodes.isNotEmpty && e.nodeId != current.nodeId
+                      ? delta
+                      : endDelta,
+                ),
               ),
             ),
       );
@@ -496,9 +532,15 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    updater.dispose();
     notifications.dispose();
     link?.dispose();
     unawaited(_writes.then((_) => repository.close()));
     super.dispose();
+  }
+
+  Future<void> prepareForUpdate() async {
+    await _writes;
+    await notifications.flush();
   }
 }

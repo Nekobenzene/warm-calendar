@@ -1,4 +1,4 @@
-param([switch]$SkipBuild, [string]$ReleaseDirectory, [string]$PackageName = '日程表Windows',
+param([switch]$SkipBuild, [string]$ReleaseDirectory, [string]$PackageName = '日程表Windows', [string]$OutputDirectory,
     [string]$CertificateThumbprint, [switch]$MachineCertificateStore, [switch]$RequireTrustedSignature)
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
@@ -31,7 +31,7 @@ try {
     } else { Join-Path $taskRoot 'build\windows\x64\runner\Release' }
     if (!(Test-Path -LiteralPath "$taskRelease\warm_calendar.exe")) { throw '未找到构建产物。' }
     if ($PackageName -notmatch '^[\p{L}\p{N}_-]+$') { throw '打包名称只能包含文字、数字、下划线和连字符。' }
-    $taskDestination = Join-Path (Join-Path $taskRoot 'dist') $PackageName
+    $taskDestination = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory, $taskRoot) } else { Join-Path (Join-Path $taskRoot 'dist') $PackageName }
     New-Item -ItemType Directory -Path $taskDestination -Force | Out-Null
     Get-ChildItem -LiteralPath $taskRelease | Copy-Item -Destination $taskDestination -Recurse -Force
     $taskService = Join-Path $taskDestination 'sync-service'
@@ -56,6 +56,6 @@ try {
     Copy-Item -LiteralPath (Join-Path $taskRoot 'DESKTOP.md') -Destination (Join-Path $taskDestination '使用说明.md') -Force
     Copy-Item -LiteralPath (Join-Path $taskRoot 'SIGNING.md') -Destination (Join-Path $taskDestination '签名说明.md') -Force
     & "$PSScriptRoot\sign-desktop.ps1" -PackageDirectory $taskDestination -CertificateThumbprint $CertificateThumbprint -MachineCertificateStore:$MachineCertificateStore -RequireTrustedSignature:$RequireTrustedSignature
-    Compress-Archive -LiteralPath $taskDestination -DestinationPath (Join-Path $taskRoot "dist\$PackageName.zip") -Force
+    Compress-Archive -LiteralPath $taskDestination -DestinationPath ($taskDestination + '.zip') -Force
     Write-Output "桌面版：$taskDestination\warm_calendar.exe"
 } finally { Pop-Location }

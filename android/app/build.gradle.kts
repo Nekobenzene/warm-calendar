@@ -18,7 +18,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.tangtang.warm_calendar"
+        val preview = flutter.versionName.contains("-preview")
+        applicationId = if (preview) "com.tangtang.warm_calendar.preview" else "com.tangtang.warm_calendar"
+        manifestPlaceholders["appLabel"] = if (preview) "日程表·预览" else "日程表"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24

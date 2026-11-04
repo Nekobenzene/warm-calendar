@@ -1,7 +1,7 @@
 name: warm_calendar
 description: A local-first Chinese calendar and planner prototype.
 publish_to: none
-version: 0.5.0+5
+version: 0.6.0+7
 environment:
   sdk: '>=3.10.0 <4.0.0'
 dependencies:

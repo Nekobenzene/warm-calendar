@@ -1,7 +1,7 @@
 import 'models.dart';
 
-const hourHeights = [36.0, 60.0, 96.0, 144.0, 240.0, 480.0, 720.0];
-const gridMinutes = [60, 30, 15, 15, 5, 5, 1];
+const hourHeights = [12.0, 24.0, 36.0, 60.0, 96.0, 144.0, 240.0, 480.0, 720.0];
+const gridMinutes = [120, 120, 60, 30, 15, 15, 5, 5, 1];
 
 DateTime draggedStart(
   DateTime start, {
