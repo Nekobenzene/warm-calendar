@@ -305,7 +305,7 @@ class _EventEditorState extends State<EventEditor> {
       allDay: _allDay,
       template: ScheduleEvent(
         id: 'draft',
-        title: _title.text.trim().isEmpty ? '日程' : _title.text.trim(),
+        title: _title.text.trim(),
         start: start,
         end: end,
         updatedAt: widget.controller.now,
@@ -764,7 +764,11 @@ class _EventEditorState extends State<EventEditor> {
                               labelText: '标题',
                               counterText: '',
                             ),
-                            validator: (v) => v == null || v.trim().isEmpty
+                            validator: (v) =>
+                                !hasValidGroupTitle(
+                                  v ?? '',
+                                  _mode == 1 ? (_rule?.nodes ?? []) : [],
+                                )
                                 ? '请输入日程标题'
                                 : null,
                           ),

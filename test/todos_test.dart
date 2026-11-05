@@ -189,6 +189,7 @@ void main() {
     expect(
       () => ScheduleEvent.fromJson({
         ...e.toJson(),
+        'hasDeadline': false,
         'reminderOffsets': [0],
       }),
       throwsFormatException,

@@ -1,4 +1,4 @@
-const appVersion = '0.7.1';
+const appVersion = '0.7.2';
 final isLocalPreview = appVersion.contains('-preview');
 String get appDatabaseName =>
     isLocalPreview ? 'warm_calendar_preview' : 'warm_calendar';

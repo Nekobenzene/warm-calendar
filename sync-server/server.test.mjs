@@ -219,3 +219,28 @@ test('服务重启后设备和日程持久保留；撤销凭据后不可访问',
   for (const name of readdirSync(folder)) rmSync(join(folder, name));
   rmdirSync(folder);
 });
+
+test('重复待办组、截止提醒和空组标题可同步，旧端跳过新格式', async t => {
+  const {call, register, pair} = await fixture(t);
+  const desktop = await register(), phone = await register('android');
+  await pair(desktop, phone);
+  const item = {id: 'node-a', title: '独立标题', notes: '节点备注', dayOffset: 0, minute: 0, durationMinutes: 0,
+    allDay: false, color: 0x80e4ead9, completedColor: 0xffe2e3df, reminderOffsets: [10,0], reminderSound: true};
+  const group = event('todo-repeat', {title: '', isTodo: true, hasDeadline: false, taskCreatedAt: '2026-11-05T00:00:00Z',
+    todoOrder: 4, start: '2026-11-05T00:00:00Z', end: '2026-11-05T00:00:00Z', reminderOffsets: [],
+    todoRepeat: {frequency: 'interval', intervalDays: 3, holidayPolicy: 'ignore', weekendHolidayPriority: 'holiday', nodes: [{item, deadlineMinutes: null}]}});
+  const occurrence = event('todo-repeat::2026-11-05T0000~node-a', {title: '独立标题', isTodo: true, hasDeadline: true,
+    taskCreatedAt: '2026-11-05T00:00:00Z', todoOrder: 5, todoCycleStart: '2026-11-05', seriesId: 'todo-repeat',
+    occurrenceKey: '2026-11-05T0000~node-a', nodeId: 'node-a', start: '2026-11-08T00:00:00Z', end: '2026-11-08T00:00:00Z'});
+  await call('/v1/sync', desktop.credential, {events: [group, occurrence], cursor: 0, supportsTodos: true, supportsRepeatTodos: true});
+  const result = await call('/v1/sync', phone.credential, {events: [], cursor: 0, supportsTodos: true, supportsRepeatTodos: true, supportsOptionalGroupTitle: true});
+  assert.deepEqual(result.events, [group, occurrence]);
+  const old = await call('/v1/sync', phone.credential, {events: [], cursor: 0, supportsTodos: true});
+  assert.equal(old.events.length, 0); assert.ok(old.cursor > 0);
+  await call('/v1/sync', desktop.credential, {events: [{...group, todoRepeat: {...group.todoRepeat, nodes: [{item: {...item, title: ''}}]}}], cursor: 0}, 400);
+  await call('/v1/sync', desktop.credential, {events: [{...group, todoRepeat: {...group.todoRepeat, nodes: [{item, deadlineMinutes: 99999}]}}], cursor: 0}, 400);
+  const schedule = event('blank-schedule', {title: '', recurrence: {nodes: [item]}});
+  await call('/v1/sync', desktop.credential, {events: [schedule], cursor: 0});
+  const current = await call('/v1/sync', phone.credential, {events: [], cursor: 0, supportsTodos: true, supportsRepeatTodos: true, supportsOptionalGroupTitle: true});
+  assert.equal(current.events.find(e => e.id === 'blank-schedule').title, '');
+});

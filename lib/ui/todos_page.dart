@@ -376,6 +376,11 @@ class TodosPageState extends State<TodosPage> {
                     }),
               child: Text(_multi ? '退出多选' : '多选'),
             ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.repeat, size: 18),
+              label: const Text('重复组'),
+              onPressed: () => showTodoGroups(context, c),
+            ),
           ],
         ),
         if (_multi)
@@ -674,3 +679,66 @@ class HomeTodoPanel extends StatelessWidget {
     );
   }
 }
+
+Future<void> showTodoGroups(
+  BuildContext context,
+  AppController c,
+) => showAppDialog<void>(
+  context: context,
+  builder: (ctx) => AlertDialog(
+    title: const Text('重复待办组'),
+    content: SizedBox(
+      width: 560,
+      height: math.min(400, MediaQuery.sizeOf(context).height * .55),
+      child: AnimatedBuilder(
+        animation: c,
+        builder: (_, _) {
+          final groups = c.todoGroups;
+          if (groups.isEmpty) return const Center(child: Text('暂无重复待办组'));
+          return ListView.builder(
+            itemCount: groups.length,
+            itemBuilder: (_, i) {
+              final group = groups[i];
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  group.title.isEmpty
+                      ? group.todoRepeat!.nodes
+                            .map((n) => n.item.title)
+                            .join('、')
+                      : group.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  '${group.todoRepeat!.nodes.length} 项 · 起始 ${dateKey(group.start)}',
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: '编辑重复组',
+                      onPressed: () => openTodoEditor(ctx, c, task: group),
+                      icon: const Icon(Icons.edit_outlined),
+                    ),
+                    IconButton(
+                      tooltip: '删除重复组',
+                      onPressed: () => deleteEvent(ctx, c, group),
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: AppColors.danger,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+    ],
+  ),
+);

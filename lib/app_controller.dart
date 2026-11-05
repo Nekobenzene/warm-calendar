@@ -66,7 +66,7 @@ class AppController extends ChangeNotifier {
     try {
       await notifications.reconcile(
         planReminders(
-          events,
+          [...events, ...todoReminderEvents(_events, calendar, now)],
           settings,
           now,
           limit: notifications.android ? 128 : 512,
@@ -101,7 +101,19 @@ class AppController extends ChangeNotifier {
     _events.where((e) => !e.isTodo).toList(),
     calendar,
   );
-  List<ScheduleEvent> get todos => orderedTodos(_events, settings);
+  List<ScheduleEvent> get todos =>
+      orderedTodos(resolveTodos(_events, calendar, now), settings);
+  List<ScheduleEvent> get todoGroups => _events
+      .where((e) => e.isTodo && e.todoRepeat != null && !e.deleted)
+      .toList();
+  int get nextTodoOrder => _events
+      .where((e) => e.isTodo)
+      .fold<int>(
+        0,
+        (value, e) => value > e.todoOrder + (e.todoRepeat?.nodes.length ?? 1)
+            ? value
+            : e.todoOrder + (e.todoRepeat?.nodes.length ?? 1),
+      );
   List<ScheduleEvent> get allItems => [...events, ...todos];
   List<ScheduleEvent> get calendarEvents => [
     ...events,
@@ -109,7 +121,10 @@ class AppController extends ChangeNotifier {
   ];
   ScheduleEvent? seriesFor(ScheduleEvent event) => _events
       .where(
-        (e) => e.id == event.seriesId && e.recurrence != null && !e.deleted,
+        (e) =>
+            e.id == event.seriesId &&
+            (e.recurrence != null || e.todoRepeat != null) &&
+            !e.deleted,
       )
       .firstOrNull;
   List<ScheduleEvent> onDay(DateTime d) =>
@@ -130,12 +145,14 @@ class AppController extends ChangeNotifier {
     if (records.isEmpty) return;
     await _persistEvents(records);
     await _completeExpired();
+    await _syncNotifications();
+    _checkReminders();
     _notify();
   });
 
   Future<void> reorderTodos(List<String> visibleOrder) => _serialize(() async {
     final all = orderedTodos(
-      _events,
+      resolveTodos(_events, calendar, now),
       settings.copyWith(
         todoSort: TodoSort.importance,
         todoSortDescending: false,
@@ -269,7 +286,7 @@ class AppController extends ChangeNotifier {
     _resolvedEvents = null;
     link?.localChanged();
     if (!preserveReminder) dueReminders.removeWhere((e) => e.id == event.id);
-    if (event.recurrence != null) {
+    if (event.recurrence != null || event.todoRepeat != null) {
       dueReminders.removeWhere((e) => e.seriesId == event.id);
     }
   }
@@ -278,7 +295,7 @@ class AppController extends ChangeNotifier {
     await repository.saveEvents(records);
     final ids = records.map((e) => e.id).toSet();
     final roots = records
-        .where((e) => e.recurrence != null)
+        .where((e) => e.recurrence != null || e.todoRepeat != null)
         .map((e) => e.id)
         .toSet();
     _events.removeWhere((e) => ids.contains(e.id));
@@ -292,6 +309,14 @@ class AppController extends ChangeNotifier {
 
   Future<void> saveEvent(ScheduleEvent event) => _serialize(() async {
     ScheduleEvent.fromJson(event.toJson());
+    if (event.todoRepeat != null) {
+      resolveTodos(
+        [event],
+        calendar,
+        now.isBefore(event.start) ? event.start : now,
+        validate: true,
+      );
+    }
     if (event.recurrence != null) {
       expandSeries(event, calendar, validate: true);
     }
@@ -299,10 +324,16 @@ class AppController extends ChangeNotifier {
       throw const FormatException('该重复日程已删除，请关闭后重试');
     }
     final old = _events.where((e) => e.id == event.id).firstOrNull;
-    if (old?.recurrence != null && event.recurrence == null) {
+    if ((old?.recurrence != null || old?.todoRepeat != null) &&
+        event.recurrence == null &&
+        event.todoRepeat == null) {
       // Retain the old rule as a tombstone so old exceptions never resurrect.
       final single = ScheduleEvent(
         id: '${event.id}-single-${DateTime.now().microsecondsSinceEpoch}',
+        isTodo: event.isTodo,
+        hasDeadline: event.hasDeadline,
+        taskCreatedAt: event.taskCreatedAt,
+        todoOrder: event.todoOrder,
         title: event.title,
         notes: event.notes,
         start: event.start,
@@ -340,7 +371,51 @@ class AppController extends ChangeNotifier {
     if (delta == Duration.zero && endDelta == Duration.zero) return;
     final root = entireSeries ? seriesFor(current) : null;
     final records = <ScheduleEvent>[];
-    if (root != null) {
+    if (root?.todoRepeat != null) {
+      final rule = root!.todoRepeat!;
+      final cycle = todoCycleAt(root, now)!;
+      if (newStart.isBefore(cycle.start) || newStart.isAfter(cycle.end)) {
+        throw const FormatException('修改所有周期时，截止时间必须位于当前周期内；跨周期请仅修改本次');
+      }
+      final offset =
+          DateTime.utc(
+                newStart.year,
+                newStart.month,
+                newStart.day,
+                newStart.hour,
+                newStart.minute,
+              )
+              .difference(
+                DateTime.utc(
+                  cycle.start.year,
+                  cycle.start.month,
+                  cycle.start.day,
+                ),
+              )
+              .inMinutes;
+      final moved = root.copyWith(
+        todoRepeat: TodoRepeatRule(
+          frequency: rule.frequency,
+          intervalDays: rule.intervalDays,
+          holidayPolicy: rule.holidayPolicy,
+          weekendHolidayPriority: rule.weekendHolidayPriority,
+          nodes: [
+            for (final n in rule.nodes)
+              n.item.id == current.nodeId
+                  ? TodoRepeatNode(
+                      item: n.item,
+                      deadlineMinutes: newStart == cycle.end ? null : offset,
+                    )
+                  : n,
+          ],
+        ),
+      );
+      ScheduleEvent.fromJson(moved.toJson());
+      records.add(moved);
+      if (_events.any((e) => e.id == current.id)) {
+        records.add(current.copyWith(start: newStart, end: newStart));
+      }
+    } else if (root != null) {
       final r = root.recurrence!;
       final rule = r.copyWith(
         shiftMinutes: r.shiftMinutes + delta.inMinutes,
@@ -411,7 +486,11 @@ class AppController extends ChangeNotifier {
   Future<void> deleteEvent(ScheduleEvent event, {bool entireSeries = false}) =>
       _serialize(() async {
         final current = entireSeries
-            ? seriesFor(event)
+            ? (event.todoRepeat != null
+                  ? _events
+                        .where((e) => e.id == event.id && !e.deleted)
+                        .firstOrNull
+                  : seriesFor(event))
             : allItems.where((e) => e.id == event.id && !e.deleted).firstOrNull;
         if (current == null) return;
         await _persistEvent(current.copyWith(deleted: true));
@@ -535,11 +614,29 @@ class AppController extends ChangeNotifier {
           e.deleted,
     );
     if (!settings.remindersEnabled) return;
-    for (final event in events) {
+    final reminderItems = {
+      for (final e in [
+        ...allItems,
+        ...resolveTodos(
+          _events,
+          calendar,
+          now.subtract(const Duration(minutes: 1)),
+          includeSingles: false,
+        ),
+      ])
+        e.id: e,
+    };
+    for (final event in reminderItems.values.where(
+      (e) => !e.isTodo || e.hasDeadline,
+    )) {
       final passed =
           event.reminderOffsets
               .where(
                 (offset) =>
+                    (event.todoCycleStart == null ||
+                        !event.start
+                            .subtract(Duration(minutes: offset))
+                            .isBefore(event.todoCycleStart!)) &&
                     !event.start
                         .subtract(Duration(minutes: offset))
                         .isAfter(now) &&

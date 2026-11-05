@@ -18,7 +18,8 @@ String reminderBody(ScheduleEvent event, DateTime now) {
       : minutes >= 60
       ? '${minutes ~/ 60}小时${minutes % 60 > 0 ? '${minutes % 60}分钟' : ''}后开始'
       : '$minutes分钟后开始';
-  return '$when · 开始：${dateKey(event.start)} ${event.allDay ? '全天' : clockText(event.start)}${event.notes.isEmpty ? '' : '\n${event.notes}'}';
+  final timing = event.isTodo ? when.replaceAll('开始', '截止') : when;
+  return '$timing · ${event.isTodo ? '截止' : '开始'}：${dateKey(event.start)} ${event.allDay ? '全天' : clockText(event.start)}${event.notes.isEmpty ? '' : '\n${event.notes}'}';
 }
 
 class ReminderRequest {
@@ -60,8 +61,10 @@ List<ReminderRequest> planReminders(
   final candidates = <(ScheduleEvent, int, DateTime, String)>[];
   final horizon = now.add(const Duration(days: 30));
   for (final e in events.where((e) => !e.completed && !e.deleted)) {
+    if (e.isTodo && (!e.hasDeadline || e.todoRepeat != null)) continue;
     for (final offset in e.reminderOffsets) {
       final at = e.start.subtract(Duration(minutes: offset));
+      if (e.todoCycleStart != null && at.isBefore(e.todoCycleStart!)) continue;
       if (at.isAfter(now) && !at.isAfter(horizon)) {
         candidates.add((e, offset, at, reminderKey(e, offset)));
       }

@@ -409,7 +409,11 @@ Future<void> completeEvent(
     if (!confirmed || !context.mounted) return;
   }
   if (context.mounted) {
-    await runAction(context, () => controller.toggleCompleted(event));
+    await runAction(
+      context,
+      () => controller.toggleCompleted(event),
+      success: event.isTodo ? (event.completed ? '待办已标为未完成' : '待办已完成') : null,
+    );
   }
 }
 
@@ -504,14 +508,14 @@ Future<void> deleteEvent(
 ) async {
   final messenger = Overlay.of(context, rootOverlay: true);
   final width = MediaQuery.sizeOf(context).width;
-  final repeated = event.seriesId != null;
+  final repeated = event.seriesId != null || event.todoRepeat != null;
   final confirmed = await showAppDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(event.isTodo ? '删除待办' : '删除日程'),
       content: Text(
         repeated
-            ? '删除“${event.title}”的本次，还是整个重复日程？整个日程包含已完成和已单独修改的各次。'
+            ? '删除“${event.title}”的本次，还是整个重复${event.isTodo ? '待办组' : '日程'}？整组包含已完成和已单独修改的各次。'
             : '删除“${event.title}”？',
       ),
       actions: [
@@ -519,7 +523,7 @@ Future<void> deleteEvent(
           onPressed: () => Navigator.pop(ctx),
           child: const Text('取消'),
         ),
-        if (repeated)
+        if (repeated && event.seriesId != null)
           TextButton(
             onPressed: () => Navigator.pop(ctx, 'once'),
             child: const Text('仅删除本次'),
@@ -527,7 +531,7 @@ Future<void> deleteEvent(
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
           onPressed: () => Navigator.pop(ctx, repeated ? 'series' : 'once'),
-          child: Text(repeated ? '删除整个日程' : '删除'),
+          child: Text(repeated ? (event.isTodo ? '删除整个待办组' : '删除整个日程') : '删除'),
         ),
       ],
     ),
@@ -539,7 +543,7 @@ Future<void> deleteEvent(
         messenger,
         width,
         confirmed == 'series'
-            ? '整个重复日程已删除'
+            ? (event.isTodo ? '重复待办组已删除' : '整个重复日程已删除')
             : event.isTodo
             ? '待办已删除'
             : '日程已删除',

@@ -77,9 +77,24 @@ export function createSyncServer({ database = ':memory:', allowedOrigins = [], n
     } catch (error) { if (error instanceof ApiError) throw error; throw new ApiError(400, 'JSON格式错误'); }
   }
   function validateEvent(e) {
-    if (e?.isTodo === true) requireValue(typeof e.hasDeadline === 'boolean' && Number.isFinite(Date.parse(e.taskCreatedAt)) && Number.isSafeInteger(e.todoOrder) && e.todoOrder >= 0 && e.start === e.end && !e.allDay && !e.recurrence && !e.seriesId && Array.isArray(e.reminderOffsets) && e.reminderOffsets.length === 0, 400, '待办数据无效');
+    if (e?.isTodo === true) {
+      const reminders = values => Array.isArray(values) && values.length <= 12 && new Set(values).size === values.length && values.every(v => Number.isInteger(v) && v >= 0 && v <= 525600);
+      requireValue(typeof e.hasDeadline === 'boolean' && Number.isFinite(Date.parse(e.taskCreatedAt)) && Number.isSafeInteger(e.todoOrder) && e.todoOrder >= 0 && e.start === e.end && !e.allDay && !e.recurrence && reminders(e.reminderOffsets) && (e.hasDeadline || e.reminderOffsets.length === 0), 400, '待办数据无效');
+      requireValue(!e.seriesId || typeof e.occurrenceKey === 'string' && /^\d{4}-\d{2}-\d{2}T\d{4}~[A-Za-z0-9_-]{1,64}$/.test(e.occurrenceKey) && Number.isFinite(Date.parse(e.todoCycleStart)), 400, '重复待办关联无效');
+      if (e.todoRepeat != null) {
+        const r = e.todoRepeat;
+        const policies = ['ignore', 'skip', 'only', 'skipHolidays', 'skipWeekends', 'onlyWeekends', 'onlyHolidays'];
+        requireValue(!e.seriesId && !e.hasDeadline && ['daily', 'weekly', 'monthly', 'interval'].includes(r.frequency) && Number.isInteger(r.intervalDays) && r.intervalDays >= 1 && r.intervalDays <= 365 && policies.includes(r.holidayPolicy) && ['holiday', 'weekend'].includes(r.weekendHolidayPriority) && Array.isArray(r.nodes) && r.nodes.length >= 1 && r.nodes.length <= 96, 400, '重复待办规则无效');
+        const days = r.frequency === 'daily' ? 1 : r.frequency === 'weekly' ? 7 : r.frequency === 'monthly' ? 31 : r.intervalDays;
+        requireValue(new Set(r.nodes.map(n => n?.item?.id)).size === r.nodes.length, 400, '组内待办ID重复');
+        for (const node of r.nodes) {
+          const n = node?.item;
+          requireValue(n && /^[A-Za-z0-9_-]{1,64}$/.test(n.id) && typeof n.title === 'string' && n.title.length <= 120 && (e.title?.trim() || n.title.trim()) && typeof n.notes === 'string' && n.notes.length <= 4000 && !n.allDay && n.durationMinutes === 0 && n.dayOffset === 0 && n.minute === 0 && reminders(n.reminderOffsets) && Number.isInteger(n.color) && n.color >= 0 && n.color <= 0xffffffff && Number.isInteger(n.completedColor) && n.completedColor >= 0 && n.completedColor <= 0xffffffff && (node.deadlineMinutes == null || Number.isInteger(node.deadlineMinutes) && node.deadlineMinutes >= 0 && node.deadlineMinutes < days * 1440), 400, '组内待办配置无效');
+        }
+      }
+    }
     requireValue(e && typeof e === 'object' && !Array.isArray(e) && typeof e.id === 'string' && e.id.length > 0 && e.id.length <= 512, 400, '日程ID无效');
-    requireValue(typeof e.title === 'string' && e.title.trim().length > 0 && e.title.length <= (e.nodeId ? 241 : 120) &&
+    requireValue(typeof e.title === 'string' && (e.title.trim().length > 0 || e.todoRepeat || (e.recurrence?.nodes?.length > 0 && e.recurrence.nodes.every(n => typeof n.title === 'string' && n.title.trim().length > 0))) && e.title.length <= (e.nodeId ? 241 : 120) &&
       (e.notes == null || typeof e.notes === 'string' && e.notes.length <= (e.nodeId ? 8001 : 4000)) &&
       Number.isFinite(Date.parse(e.start)) && Number.isFinite(Date.parse(e.end)) &&
       Number.isFinite(Date.parse(e.updatedAt)) && Number.isSafeInteger(e.revision) && e.revision >= 0, 400, '日程格式无效');
@@ -248,7 +263,9 @@ export function createSyncServer({ database = ':memory:', allowedOrigins = [], n
           const preferences = get('SELECT auto_complete,auto_complete_todos FROM group_settings WHERE group_id=?', device.group_id);
           return { settings: preferences ? { autoCompleteExpired: !!preferences.auto_complete, ...(input.supportsTodos === true ? { autoCompleteTodos: !!preferences.auto_complete_todos } : {}) } : null,
             groupId: device.group_id, cursor: page.length ? page.at(-1).sequence : current,
-            hasMore: rows.length > page.length, events: page.map(r => JSON.parse(r.payload)).filter(e => input.supportsTodos === true || e.isTodo !== true), ...state(device) };
+            hasMore: rows.length > page.length, events: page.map(r => JSON.parse(r.payload)).filter(e => (input.supportsTodos === true || e.isTodo !== true) &&
+              (input.supportsRepeatTodos === true || !(e.isTodo && (e.todoRepeat || e.seriesId || e.reminderOffsets?.length))) &&
+              (input.supportsOptionalGroupTitle === true || e.title.trim().length > 0)), ...state(device) };
         });
         send(200, output); return;
       }

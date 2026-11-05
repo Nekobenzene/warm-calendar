@@ -176,9 +176,7 @@ List<ScheduleEvent> _expandCycle(
       rows.add(
         ScheduleEvent(
           id: occurrenceId(template.id, key),
-          title: node.title.trim().isEmpty
-              ? template.title
-              : '${template.title}-${node.title}',
+          title: combinedTitle(template.title, node.title),
           notes: [
             node.notes,
             template.notes,
@@ -235,7 +233,7 @@ List<ScheduleEvent> _expandNodeEvents(
     final items = expandSeries(
       ScheduleEvent(
         id: root.id,
-        title: node.title.isEmpty ? root.title : '${root.title}-${node.title}',
+        title: combinedTitle(root.title, node.title),
         notes: [node.notes, root.notes].where((s) => s.isNotEmpty).join('\n'),
         start: start,
         end: start.add(Duration(minutes: node.durationMinutes)),

@@ -1,5 +1,6 @@
 import 'dart:convert';
 part 'recurrence_node.dart';
+part 'todo_repeat.dart';
 
 String dateKey(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -235,6 +236,8 @@ class ScheduleEvent {
   final bool isTodo, hasDeadline;
   final DateTime? taskCreatedAt;
   final int todoOrder;
+  final TodoRepeatRule? todoRepeat;
+  final DateTime? todoCycleStart;
   DateTime get createdAt => taskCreatedAt ?? updatedAt;
   DateTime? get deadline => isTodo && hasDeadline ? start : null;
   final String id;
@@ -270,6 +273,8 @@ class ScheduleEvent {
     this.hasDeadline = false,
     this.taskCreatedAt,
     this.todoOrder = 0,
+    this.todoRepeat,
+    this.todoCycleStart,
     required this.id,
     required this.title,
     required this.start,
@@ -329,11 +334,16 @@ class ScheduleEvent {
     DateTime? start,
     DateTime? end,
     RecurrenceRule? recurrence,
+    TodoRepeatRule? todoRepeat,
+    List<int>? reminderOffsets,
+    bool? reminderSound,
   }) => ScheduleEvent(
     isTodo: isTodo,
     hasDeadline: hasDeadline ?? this.hasDeadline,
     taskCreatedAt: taskCreatedAt,
     todoOrder: todoOrder ?? this.todoOrder,
+    todoRepeat: todoRepeat ?? this.todoRepeat,
+    todoCycleStart: todoCycleStart,
     id: id,
     title: title ?? this.title,
     start: start ?? this.start,
@@ -343,8 +353,8 @@ class ScheduleEvent {
     allDay: allDay,
     completed: completed ?? this.completed,
     reminderMinutes: reminderMinutes,
-    reminderOffsets: reminderOffsets,
-    reminderSound: reminderSound,
+    reminderOffsets: reminderOffsets ?? this.reminderOffsets,
+    reminderSound: reminderSound ?? this.reminderSound,
     deleted: deleted ?? this.deleted,
     revision: revision + 1,
     recurrence: recurrence ?? this.recurrence,
@@ -361,6 +371,8 @@ class ScheduleEvent {
       'hasDeadline': hasDeadline,
       'taskCreatedAt': createdAt.toUtc().toIso8601String(),
       'todoOrder': todoOrder,
+      if (todoRepeat != null) 'todoRepeat': todoRepeat!.toJson(),
+      if (todoCycleStart != null) 'todoCycleStart': dateKey(todoCycleStart!),
     },
     'id': id,
     'title': title,
@@ -397,6 +409,14 @@ class ScheduleEvent {
           ? null
           : DateTime.parse(json['taskCreatedAt'] as String).toUtc(),
       todoOrder: json['todoOrder'] as int? ?? 0,
+      todoRepeat: json['todoRepeat'] == null
+          ? null
+          : TodoRepeatRule.fromJson(
+              Map<String, dynamic>.from(json['todoRepeat'] as Map),
+            ),
+      todoCycleStart: json['todoCycleStart'] == null
+          ? null
+          : DateTime.parse(json['todoCycleStart'] as String),
       id: json['id'] as String,
       title: json['title'] as String,
       notes: json['notes'] as String? ?? '',
@@ -428,10 +448,24 @@ class ScheduleEvent {
                 event.allDay ||
                 !event.isPoint ||
                 event.recurrence != null ||
-                event.seriesId != null ||
-                event.reminderOffsets.isNotEmpty)) ||
+                (!event.hasDeadline && event.reminderOffsets.isNotEmpty))) ||
+        (!event.isTodo &&
+            (event.todoRepeat != null || event.todoCycleStart != null)) ||
+        (event.todoRepeat != null && event.seriesId != null) ||
+        (event.todoRepeat != null &&
+            (event.hasDeadline ||
+                event.todoCycleStart != null ||
+                event.todoOrder + event.todoRepeat!.nodes.length >
+                    9007199254740991)) ||
+        (event.isTodo &&
+            event.seriesId != null &&
+            (event.todoCycleStart == null || event.nodeId == null)) ||
         event.id.isEmpty ||
-        event.title.trim().isEmpty ||
+        (!hasValidGroupTitle(
+              event.title,
+              event.recurrence?.nodes ?? const [],
+            ) &&
+            event.todoRepeat == null) ||
         event.title.length > (event.nodeId == null ? 120 : 241) ||
         event.notes.length > (event.nodeId == null ? 4000 : 8001) ||
         event.color < 0 ||
@@ -448,6 +482,7 @@ class ScheduleEvent {
       throw const FormatException('日程数据不完整或日期超出范围');
     }
     event.recurrence?.validate(event.start, allDay: event.allDay);
+    event.todoRepeat?.validate(event.title);
     if ((event.seriesId == null) != (event.occurrenceKey == null) ||
         (event.nodeId != null &&
             !RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(event.nodeId!)) ||
@@ -687,7 +722,7 @@ class BackupData {
   BackupData(this.events, this.settings);
   String encode() => const JsonEncoder.withIndent('  ').convert({
     'format': 'warm-calendar',
-    'version': 3,
+    'version': 4,
     'exportedAt': DateTime.now().toUtc().toIso8601String(),
     'events': events.map((e) => e.toJson()).toList(),
     'settings': settings.toJson(),
@@ -699,7 +734,7 @@ class BackupData {
     final j = jsonDecode(source);
     if (j is! Map<String, dynamic> ||
         j['format'] != 'warm-calendar' ||
-        ![1, 2, 3].contains(j['version']) ||
+        ![1, 2, 3, 4].contains(j['version']) ||
         j['events'] is! List ||
         j['settings'] is! Map<String, dynamic>) {
       throw const FormatException('请选择本应用导出的 JSON 备份');
@@ -713,7 +748,10 @@ class BackupData {
       throw const FormatException('备份包含重复日程 ID');
     }
     final roots = {
-      for (final e in events.where((e) => e.recurrence != null)) e.id,
+      for (final e in events.where(
+        (e) => e.recurrence != null || e.todoRepeat != null,
+      ))
+        e.id,
     };
     final keys = <String>{};
     for (final e in events.where((e) => e.seriesId != null)) {

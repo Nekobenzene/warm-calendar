@@ -352,6 +352,8 @@ class LinkController extends ChangeNotifier {
           'groupId': position.groupId,
           'cursor': position.cursor,
           'supportsTodos': true,
+            'supportsRepeatTodos': true,
+            'supportsOptionalGroupTitle': true,
           'events': pending.map((p) => p.event.toJson()).toList(),
           'settings': ?preferences,
         },

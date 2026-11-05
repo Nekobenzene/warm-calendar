@@ -13,6 +13,9 @@ import 'package:warm_calendar/sync/link_models.dart';
 import 'package:warm_calendar/sync/sync_store.dart';
 import 'package:warm_calendar/ui/link_page.dart';
 import 'recurrence_test.dart' show testApp;
+import 'repeating_todos_test.dart' as repeat_fixture;
+import 'package:warm_calendar/domain/todos.dart';
+import 'package:warm_calendar/domain/calendar_service.dart';
 
 // Widget bindings replace the global HTTP transport. These two clients exercise
 // the real loopback service without changing that override for other tests.
@@ -258,6 +261,34 @@ void main() {
       await mobile.poll(force: true);
       expect(mobile.identity!.deviceId, originalId);
       expect(mobile.devices.length, 2);
+      final repeatGroup = repeat_fixture.group(
+        title: '',
+        nodes: [repeat_fixture.node('node', title: '每轮整理')],
+      );
+      await aRepo.saveEvent(repeatGroup);
+      await desktop.poll(force: true);
+      await mobile.poll(force: true);
+      final receivedGroup = (await bRepo.loadEvents()).firstWhere(
+        (e) => e.id == repeatGroup.id,
+      );
+      expect(receivedGroup.toJson(), repeatGroup.toJson());
+      final currentRepeat = resolveTodos(
+        [receivedGroup],
+        CalendarService(),
+        DateTime(2026, 11, 5),
+      ).single;
+      await bRepo.saveEvent(
+        currentRepeat.copyWith(completed: true, todoOrder: 0),
+      );
+      await mobile.poll(force: true);
+      await desktop.poll(force: true);
+      final resolvedRepeat = resolveTodos(
+        await aRepo.loadEvents(),
+        CalendarService(),
+        DateTime(2026, 11, 5),
+      ).firstWhere((e) => e.id == currentRepeat.id);
+      expect(resolvedRepeat.completed, true);
+      expect(resolvedRepeat.reminderOffsets, [10]);
       // Loss of the active token still has a stable installation proof.
       await mobile.credentials.clear();
       mobile.identity = null;

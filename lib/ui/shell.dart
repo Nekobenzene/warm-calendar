@@ -88,7 +88,7 @@ class _AppShellState extends State<AppShell> {
     c.notifications.openedEvent.value = null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final event = c.events.where((e) => e.id == id).firstOrNull;
+      final event = c.allItems.where((e) => e.id == id).firstOrNull;
       if (event == null) {
         showMessage(context, '此日程已删除或不再存在');
         return;
@@ -673,7 +673,7 @@ class _AppShellState extends State<AppShell> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                '日程提醒：${e.title}${c.dueReminders.length > 1 ? '（另${c.dueReminders.length - 1}项）' : ''}',
+                '${e.isTodo ? '待办' : '日程'}提醒：${e.title}${c.dueReminders.length > 1 ? '（另${c.dueReminders.length - 1}项）' : ''}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),

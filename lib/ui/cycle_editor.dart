@@ -349,8 +349,9 @@ class _CycleEditorState extends State<CycleEditor> {
                             labelText: '组标题',
                             counterText: '',
                           ),
-                          validator: (s) =>
-                              s == null || s.trim().isEmpty ? '请输入组标题' : null,
+                          validator: (s) => hasValidGroupTitle(s ?? '', _nodes)
+                              ? null
+                              : '组标题为空时，每个节点都需填写标题',
                         ),
                         const SizedBox(height: 12),
                         Row(

@@ -7,6 +7,7 @@ import '../data/repository.dart';
 import '../domain/calendar_service.dart';
 import '../domain/recurrence.dart';
 import '../domain/reminders.dart';
+import '../domain/todos.dart';
 import '../platform/notification_android.dart';
 import 'link_controller.dart';
 import 'link_credentials.dart';
@@ -39,14 +40,19 @@ void calendarSyncDispatcher() {
       }
       await notifications.initialize();
       await notifications.applyDesktopSettings(settings);
+      final records = await repository.loadEvents();
+      final now = DateTime.now();
       await notifications.reconcile(
         planReminders(
-          resolveEvents(
-            (await repository.loadEvents()).where((e) => !e.isTodo).toList(),
-            calendar,
-          ),
+          [
+            ...resolveEvents(
+              records.where((e) => !e.isTodo).toList(),
+              calendar,
+            ),
+            ...todoReminderEvents(records, calendar, now),
+          ],
           settings,
-          DateTime.now(),
+          now,
           limit: 128,
         ),
       );

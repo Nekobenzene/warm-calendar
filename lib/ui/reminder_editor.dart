@@ -11,17 +11,24 @@ class ReminderSelection {
 Future<ReminderSelection?> editReminders(
   BuildContext context,
   List<int> offsets,
-  bool sound,
-) => showAppDialog<ReminderSelection>(
+  bool sound, {
+  bool deadline = false,
+}) => showAppDialog<ReminderSelection>(
   context: context,
   barrierDismissible: false,
-  builder: (_) => _ReminderEditor(offsets: offsets, sound: sound),
+  builder: (_) =>
+      _ReminderEditor(offsets: offsets, sound: sound, deadline: deadline),
 );
 
 class _ReminderEditor extends StatefulWidget {
   final List<int> offsets;
   final bool sound;
-  const _ReminderEditor({required this.offsets, required this.sound});
+  final bool deadline;
+  const _ReminderEditor({
+    required this.offsets,
+    required this.sound,
+    this.deadline = false,
+  });
   @override
   State<_ReminderEditor> createState() => _ReminderEditorState();
 }
@@ -80,7 +87,11 @@ class _ReminderEditorState extends State<_ReminderEditor> {
                       children: [
                         for (final m in [0, 5, 10, 15, 30, 60, 1440])
                           FilterChip(
-                            label: Text(reminderLabel(m)),
+                            label: Text(
+                              widget.deadline && m == 0
+                                  ? '截止时'
+                                  : reminderLabel(m),
+                            ),
                             selected: _selected.contains(m),
                             onSelected: (v) => setState(() {
                               if (v && _selected.length >= 12) {
@@ -171,7 +182,11 @@ class _ReminderEditorState extends State<_ReminderEditor> {
                             in _selected.toList()
                               ..sort((a, b) => b.compareTo(a)))
                           InputChip(
-                            label: Text(reminderLabel(m)),
+                            label: Text(
+                              widget.deadline && m == 0
+                                  ? '截止时'
+                                  : reminderLabel(m),
+                            ),
                             onDeleted: () =>
                                 setState(() => _selected.remove(m)),
                           ),

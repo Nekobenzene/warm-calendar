@@ -1,5 +1,36 @@
 # 日程表交接
 
+## 0.7.2 正式发布（2026-11-05）
+
+- 用户验收预览后授权发布并同步更新本机。正式版本0.7.2+13，恢复正式数据库、通知与连接身份，Android正式包名com.tangtang.warm_calendar；预览数据不自动迁移，保留既有正式数据。
+- 本次包含以下两轮预览全部重复待办及控件微调。沿用已通过的针对性测试与静态分析，不重复运行无关全套。
+- 正式发布说明releases/0.7.2.md，交付目录dist/releases/0.7.2/；GitHub目标main、标签v0.7.2，正式latest供应用自动更新识别。桌面安装默认不创建快捷方式。
+- Windows与Android正式构建完成，日志verification/build-*-0.7.2.log。APK版本0.7.2/code13、正式包名及原签名验证通过，见apk-identity-0.7.2.log和apk-signature-0.7.2.log。Windows仍未配置受信任代码签名证书。
+- 本机已更新并启动0.7.2+13，主程序哈希与正式构建一致；verification/installed-official-0.7.2.json、install-official-0.7.2.log记录成功安装且无需重启。未创建桌面快捷方式。
+
+## 0.7.2-preview.2 待办微调（2026-11-05）
+
+- 版本0.7.2-preview.2+12，继续独立本地预览，不推送、不发布、不覆盖0.7.1正式版，不创建桌面快捷方式。
+- 待办完成确认后显示右下成功toast，恢复未完成同样提示；取消无提示，失败使用原错误toast。
+- 组内截止天数支持输入和下拉，限定在实际循环周期内；月周期按当前或首个周期的实际天数校验。时刻采用24小时钟表选择，可切换键盘。天数与时刻控件统一48像素高；校验错误仍可在下方展开。
+- verification/tests-0.7.2-preview.2.log相关3项通过，覆盖完成提示、手机/桌面天数与时刻、越界及等高断言。未运行无关全套。渲染截图todo-deadline-072p2-desktop.png、todo-deadline-072p2-mobile.png；静态分析见analyze-0.7.2-preview.2.log。
+- 产物目录dist/previews/0.7.2-preview.2/，包含Windows安装器、便携目录及zip、Android APK与SHA256SUMS.txt。Android真机通知尚未验收。
+- 本机预览已更新并重新运行，installed-preview-0.7.2-preview.2.json确认版本0.7.2-preview.2+12且主程序SHA256与构建一致；正式版仍0.7.1+10。安装日志install-preview-0.7.2-preview.2.log成功，无需重启，未创建桌面快捷方式。
+
+## 0.7.2 重复待办独立预览（2026-11-05）
+
+用户要求先预览，不推送、不发布、不覆盖正式版。版本0.7.2-preview.1+11，继续使用独立Preview数据库/通知/设备身份、4281同步端口和Android .preview包名。正式0.7.1保留，预览数据不自动迁入正式版。不开启桌面快捷方式。
+
+- 待办表单只有“不重复/重复”两页。重复支持每日、每周、每月、自定义1—365天，指定起始日、可空组标题/备注、七类假期策略及周末假期归类。中部一列组内待办，各项独立编辑标题、备注、两色RGBA、截止日/时/分及多次提醒/声音。默认截止为下个周期边界；月末超过实际周期的截止收敛到周期结束。长按排列节点顺序，多项列表内部滚动。
+- 新建按底层重要序列尾部追加。所有日常列表/首页/日历只展开当前周期，不生成或显示整条未来系列。每项有稳定的“组ID::周期起始日T0000~节点ID”，完成、删除、改期、拖动排序只写该周期的例外；下周期重新开始，跨周期改期仍归属原周期。编辑组时已有单项例外保留；删除可选本次或整个组。重复组管理入口允许编辑尚未开始或被假期筛空的定义。
+- 节假日按截止日筛选；默认周期结束截止按周期最后一天判断。未知假期年份不假定为工作日，保存当前周期需要已收录数据。未来未知年份在补齐前不展开依赖假期的待办。
+- 截止提醒复用日程的多提前量和提示音设置，普通有截止待办同样支持。系统排程覆盖未来30天的重复周期（Windows512/Android128条限额），后台同步也补排；提前量不早于所属周期开始。应用内检查补入上周期最后一分钟，防止零点切换漏掉默认截止时提醒。通知正文使用“截止”而非“开始”，点击可定位待办。
+- 组标题/独立标题至少填写一项：组为空则所有节点必填；组非空时节点可空。重复日程两种模式同步采用此规则。组合标题仅将非空部分用“-”连接，备注为节点在前、组备注在后。
+- 新增lib/domain/todo_repeat.dart，复用ScheduleEvent记录/SQLite/outbox；todoRepeat定义与todoCycleStart例外标记参与JSON、备份和同步。备份版本4，兼容读取1—3；旧版拒绝新备份防止误读。新客户端声明supportsRepeatTodos/supportsOptionalGroupTitle，服务向旧客户端过滤不支持的新记录；联调两端及服务请均升级预览。
+- 验证：tests-repeat-0.7.2-preview.log新增10项通过，包含真实组内长按、空标题规则、换周期、月末不漂移、假期、例外/备份/排序、两端表单、普通/重复待办提醒及周期边界。原待办/提醒相关用例在tests-0.7.2-preview.log通过，该首轮日志的新用例失败已修复并单独重跑。tests-schedule-072.log相关3项通过；sync-0.7.2-preview.log真实HTTP双端1项通过，含配对、重复组与单项完成/提醒。sync-server-0.7.2-preview.log两项服务兼容检查通过；analyze-0.7.2-preview.log无问题。
+- 交付目录dist/previews/0.7.2-preview.1/包含Windows安装器、windows/与windows.zip、APK、SHA256SUMS.txt和预览说明。APK实际包名com.tangtang.warm_calendar.preview、版本0.7.2-preview.1/code11，签名验证通过且证书保持历史值fe006cfdf4c4bb284b7ecfd7c6ba47572329bc5d335811fd337f63b63ef733ed，记录apk-identity-0.7.2-preview.log、apk-signature-0.7.2-preview.log；两端构建见build-*-0.7.2-preview.log。尚未提交/推送/发布。
+- Windows预览已安装至%LOCALAPPDATA%/Programs/WarmCalendarPreview并自动启动；installed-preview-0.7.2.json核对版本0.7.2-preview.1+11及exe哈希与构建一致，正式0.7.1+10保留。安装日志install-preview-0.7.2.log成功且无需重启，没有创建桌面快捷方式。
+- 渲染：真实NotoSansSC/MaterialIcons字体下检查1280×800及390×844表单，截图verification/todo-repeat-072-desktop.png、todo-repeat-072-mobile.png。未上传localhost文件、未操作正式个人日程。Android真机通知仍未验收。
 ## 0.7.1 待办样式微调（2026-11-05）
 
 - 版本 0.7.1+10。待办行取消固定大高度，按标题、完整备注与时间信息计算行高；跳转定位改为累加实际行高。普通模式移除左侧完成框，多选模式保留勾选。
@@ -10,7 +41,7 @@
 - 相关7项widget用例通过：两端紧凑布局与编辑入口/完成取消、批量确认、长备注/大字、远处定位、两端长按重排和边缘滚动。日志 verification/tests-0.7.1-ui.log。没有跑无关全套；静态分析无问题，APK包名/版本/签名与正式升级要求一致；未进行Android真机验收。
 
 
-更新于2026-11-05。项目 `D:\projects\日程表`，Flutter/Dart，Git主分支main，远端为 https://github.com/Nekobenzene/warm-calendar 。本机及待发布版本0.7.1+10，GitHub已发布版本0.7.0+9。历史记录存于 `verification/HANDOFF-before-0.5.md`，其中旧限制不代表当前状态。界面规范见 `DESIGN.md`，数据来源见 `THIRD_PARTY.md`。
+更新于2026-11-05。项目 `D:\projects\日程表`，Flutter/Dart，Git主分支main，远端为 https://github.com/Nekobenzene/warm-calendar 。正式版0.7.1+10已发布且本机已更新；本轮为独立0.7.2-preview.1+11预览。历史记录存于 `verification/HANDOFF-before-0.5.md`，其中旧限制不代表当前状态。界面规范见 `DESIGN.md`，数据来源见 `THIRD_PARTY.md`。
 
 ## 本轮0.7.0正式发布与本机更新
 
