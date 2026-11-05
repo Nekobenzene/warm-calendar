@@ -39,6 +39,7 @@ List<ScheduleEvent> resolveTodos(
   DateTime at, {
   bool validate = false,
   bool includeSingles = true,
+  bool includePastCycles = true,
 }) {
   final overrides = {
     for (final e in records.where((e) => e.isTodo && e.seriesId != null))
@@ -57,68 +58,81 @@ List<ScheduleEvent> resolveTodos(
   for (final root in records.where(
     (e) => e.isTodo && !e.deleted && e.todoRepeat != null,
   )) {
-    final cycle = todoCycleAt(root, at);
-    if (cycle == null) continue;
+    final currentCycle = todoCycleAt(root, at);
+    if (currentCycle == null) continue;
     final rule = root.todoRepeat!;
-    for (var i = 0; i < rule.nodes.length; i++) {
-      final node = rule.nodes[i], n = node.item;
-      final key = '${dateKey(cycle.start)}T0000~${n.id}';
-      final id = '${root.id}::$key';
-      final offset = node.deadlineMinutes;
-      final requested = offset == null
-          ? cycle.end
-          : DateTime(
-              cycle.start.year,
-              cycle.start.month,
-              cycle.start.day + offset ~/ 1440,
-              offset % 1440 ~/ 60,
-              offset % 60,
-            );
-      final deadline = requested.isAfter(cycle.end) ? cycle.end : requested;
-      if (deadline.year > 2099) continue;
-      final holidayDate = deadline == cycle.end
-          ? DateTime(cycle.end.year, cycle.end.month, cycle.end.day - 1)
-          : deadline;
-      final allowed = calendar.allowsDate(
-        holidayDate,
-        rule.holidayPolicy,
-        rule.weekendHolidayPriority,
-      );
-      if (allowed == null && validate) {
-        throw FormatException('${holidayDate.year}年节假日未收录，请选择无视节假日或补充数据');
+    final cycles = [currentCycle];
+    if (includePastCycles && rule.nodes.any((n) => !n.removeAfterCycle)) {
+      var previous = todoCycleAt(root, dayOnly(root.start))!;
+      while (previous.start.isBefore(currentCycle.start)) {
+        cycles.add(previous);
+        previous = todoCycleAt(root, previous.end)!;
       }
-      // Explicitly handled items remain stable if holiday data changes.
-      final exception = overrides[id];
-      if (exception != null) {
-        if (!exception.deleted) result.add(exception);
-        continue;
+    }
+    for (final cycle in cycles) {
+      for (var i = 0; i < rule.nodes.length; i++) {
+        final node = rule.nodes[i], n = node.item;
+        if (cycle.start != currentCycle.start && node.removeAfterCycle) {
+          continue;
+        }
+        final key = '${dateKey(cycle.start)}T0000~${n.id}';
+        final id = '${root.id}::$key';
+        final offset = node.deadlineMinutes;
+        final requested = offset == null
+            ? cycle.end
+            : DateTime(
+                cycle.start.year,
+                cycle.start.month,
+                cycle.start.day + offset ~/ 1440,
+                offset % 1440 ~/ 60,
+                offset % 60,
+              );
+        final deadline = requested.isAfter(cycle.end) ? cycle.end : requested;
+        if (deadline.year > 2099) continue;
+        final holidayDate = deadline == cycle.end
+            ? DateTime(cycle.end.year, cycle.end.month, cycle.end.day - 1)
+            : deadline;
+        final allowed = calendar.allowsDate(
+          holidayDate,
+          rule.holidayPolicy,
+          rule.weekendHolidayPriority,
+        );
+        if (allowed == null && validate) {
+          throw FormatException('${holidayDate.year}年节假日未收录，请选择无视节假日或补充数据');
+        }
+        // Explicitly handled items remain stable if holiday data changes.
+        final exception = overrides[id];
+        if (exception != null) {
+          if (!exception.deleted) result.add(exception);
+          continue;
+        }
+        if (allowed != true) continue;
+        result.add(
+          ScheduleEvent(
+            id: id,
+            isTodo: true,
+            hasDeadline: true,
+            taskCreatedAt: root.createdAt.isAfter(cycle.start.toUtc())
+                ? root.createdAt
+                : cycle.start.toUtc(),
+            todoOrder: root.todoOrder + i,
+            todoCycleStart: cycle.start,
+            title: combinedTitle(root.title, n.title),
+            notes: [n.notes, root.notes].where((s) => s.isNotEmpty).join('\n'),
+            start: deadline,
+            end: deadline,
+            updatedAt: root.updatedAt,
+            revision: root.revision,
+            seriesId: root.id,
+            occurrenceKey: key,
+            nodeId: n.id,
+            color: n.color,
+            completedColor: n.completedColor,
+            reminderOffsets: n.reminderOffsets,
+            reminderSound: n.reminderSound,
+          ),
+        );
       }
-      if (allowed != true) continue;
-      result.add(
-        ScheduleEvent(
-          id: id,
-          isTodo: true,
-          hasDeadline: true,
-          taskCreatedAt: root.createdAt.isAfter(cycle.start.toUtc())
-              ? root.createdAt
-              : cycle.start.toUtc(),
-          todoOrder: root.todoOrder + i,
-          todoCycleStart: cycle.start,
-          title: combinedTitle(root.title, n.title),
-          notes: [n.notes, root.notes].where((s) => s.isNotEmpty).join('\n'),
-          start: deadline,
-          end: deadline,
-          updatedAt: root.updatedAt,
-          revision: root.revision,
-          seriesId: root.id,
-          occurrenceKey: key,
-          nodeId: n.id,
-          color: n.color,
-          completedColor: n.completedColor,
-          reminderOffsets: n.reminderOffsets,
-          reminderSound: n.reminderSound,
-        ),
-      );
     }
   }
   return result;
@@ -144,6 +158,7 @@ List<ScheduleEvent> todoReminderEvents(
         calendar,
         at,
         includeSingles: false,
+        includePastCycles: false,
       )) {
         result[e.id] = e;
       }

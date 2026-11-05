@@ -404,6 +404,7 @@ class AppController extends ChangeNotifier {
               n.item.id == current.nodeId
                   ? TodoRepeatNode(
                       item: n.item,
+                      removeAfterCycle: n.removeAfterCycle,
                       deadlineMinutes: newStart == cycle.end ? null : offset,
                     )
                   : n,

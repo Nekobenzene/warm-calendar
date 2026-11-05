@@ -90,6 +90,7 @@ class _TodoEditorState extends State<TodoEditor> {
     minute: (widget.repeatNode?.deadlineMinutes ?? 0) % 60,
   );
   late bool _repeat = widget.task?.todoRepeat != null;
+  late bool _removeAfterCycle = widget.repeatNode?.removeAfterCycle ?? true;
   late bool _dated = widget.nodeMode
       ? widget.repeatNode?.deadlineMinutes != null
       : (widget.task?.hasDeadline ?? false);
@@ -209,6 +210,7 @@ class _TodoEditorState extends State<TodoEditor> {
         context,
         TodoRepeatNode(
           item: item,
+          removeAfterCycle: _removeAfterCycle,
           deadlineMinutes: _dated
               ? (int.parse(_day.text) - 1) * 1440 +
                     _nodeTime.hour * 60 +
@@ -406,6 +408,7 @@ class _TodoEditorState extends State<TodoEditor> {
                       ))
                   .copyWith(id: _id('item'), title: '', notes: ''),
           deadlineMinutes: last?.deadlineMinutes,
+          removeAfterCycle: last?.removeAfterCycle ?? true,
         );
     final result = await showAppDialog<TodoRepeatNode>(
       context: context,
@@ -451,6 +454,16 @@ class _TodoEditorState extends State<TodoEditor> {
   Widget _singleFields() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
+      if (widget.nodeMode)
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('周期结束后自动移除'),
+          subtitle: const Text('关闭后保留旧周期待办，下一周期仍会生成新待办'),
+          value: _removeAfterCycle,
+          onChanged: _saving
+              ? null
+              : (value) => setState(() => _removeAfterCycle = value),
+        ),
       CheckboxListTile(
         contentPadding: EdgeInsets.zero,
         title: Text(widget.nodeMode ? '自定义周期内截止时间' : '设置截止时间'),

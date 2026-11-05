@@ -4,16 +4,23 @@ class TodoRepeatNode {
   final RecurrenceNode item;
   // Null means the next cycle's boundary; explicit offsets start at Day1 00:00.
   final int? deadlineMinutes;
-  const TodoRepeatNode({required this.item, this.deadlineMinutes});
+  final bool removeAfterCycle;
+  const TodoRepeatNode({
+    required this.item,
+    this.deadlineMinutes,
+    this.removeAfterCycle = true,
+  });
   Map<String, dynamic> toJson() => {
     'item': item.toJson(),
     'deadlineMinutes': deadlineMinutes,
+    'removeAfterCycle': removeAfterCycle,
   };
   factory TodoRepeatNode.fromJson(Map<String, dynamic> json) => TodoRepeatNode(
     item: RecurrenceNode.fromJson(
       Map<String, dynamic>.from(json['item'] as Map),
     ),
     deadlineMinutes: json['deadlineMinutes'] as int?,
+    removeAfterCycle: json['removeAfterCycle'] as bool? ?? true,
   );
 }
 

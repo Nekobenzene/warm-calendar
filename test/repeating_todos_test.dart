@@ -26,6 +26,7 @@ TodoRepeatNode node(
   int? deadline,
   List<int> reminders = const [10],
   int color = 0xffe4ead9,
+  bool removeAfterCycle = true,
 }) => TodoRepeatNode(
   item: RecurrenceNode(
     id: id,
@@ -37,6 +38,7 @@ TodoRepeatNode node(
     color: color,
   ),
   deadlineMinutes: deadline,
+  removeAfterCycle: removeAfterCycle,
 );
 ScheduleEvent group({
   String title = '读书',
@@ -98,6 +100,69 @@ Future<void> capture(WidgetTester t, String name) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('周期自动移除默认开启且旧数据兼容，关闭配置往返保留', () {
+    final legacy = node('old').toJson()..remove('removeAfterCycle');
+    expect(TodoRepeatNode.fromJson(legacy).removeAfterCycle, true);
+    final root = group(nodes: [node('keep', removeAfterCycle: false)]);
+    expect(
+      ScheduleEvent.fromJson(
+        root.toJson(),
+      ).todoRepeat!.nodes.single.removeAfterCycle,
+      false,
+    );
+  });
+  test('跨周期仅保留关闭自动移除的节点，完成删除改期例外独立', () {
+    final cal = CalendarService();
+    final root = group(
+      nodes: [node('remove'), node('keep', removeAfterCycle: false)],
+    );
+    final first = resolveTodos([root], cal, DateTime(2026, 11, 5));
+    final keep = first.singleWhere((e) => e.nodeId == 'keep');
+    final now = DateTime(2026, 11, 7);
+    var rows = resolveTodos(
+      [root, keep.copyWith(completed: true, todoOrder: 0)],
+      cal,
+      now,
+    );
+    expect(rows.where((e) => e.nodeId == 'remove'), hasLength(1));
+    expect(rows.where((e) => e.nodeId == 'keep'), hasLength(3));
+    expect(rows.singleWhere((e) => e.id == keep.id).completed, true);
+    expect(rows.singleWhere((e) => e.id == keep.id).todoOrder, 0);
+    rows = resolveTodos([root, keep.copyWith(deleted: true)], cal, now);
+    expect(rows.any((e) => e.id == keep.id), false);
+    expect(rows.where((e) => e.nodeId == 'keep'), hasLength(2));
+    final moved = keep.copyWith(
+      start: DateTime(2026, 11, 9),
+      end: DateTime(2026, 11, 9),
+    );
+    final reminders = todoReminderEvents([root, moved], cal, now);
+    expect(reminders.where((e) => e.id == keep.id), hasLength(1));
+    expect(
+      reminders.singleWhere((e) => e.id == keep.id).deadline,
+      moved.deadline,
+    );
+  });
+  test('月周期保留沿用实际月界且保留项遵循节假日筛选', () {
+    final root = group(
+      start: DateTime(2026, 1, 31),
+      frequency: RepeatFrequency.monthly,
+      nodes: [node('keep', removeAfterCycle: false)],
+    );
+    final rows = resolveTodos([root], CalendarService(), DateTime(2026, 3, 31));
+    expect(rows.map((e) => e.deadline).toSet(), {
+      DateTime(2026, 2, 28),
+      DateTime(2026, 3, 31),
+      DateTime(2026, 4, 30),
+    });
+    final weekends = group(
+      holiday: HolidayPolicy.onlyWeekends,
+      nodes: [node('keep', removeAfterCycle: false)],
+    );
+    expect(
+      resolveTodos([weekends], CalendarService(), DateTime(2026, 11, 9)),
+      hasLength(2),
+    );
+  });
   testWidgets('完成待办确认后显示右下toast，取消不提示', (t) async {
     viewport(t, const Size(1280, 800));
     final c = await fixtures.controller([task('toast', 0)], t);
@@ -162,6 +227,11 @@ void main() {
       await t.tap(find.text('节点'));
       await t.pumpAndSettle();
       final day = find.widgetWithText(TextFormField, '周期第几天');
+      final removeSwitch = find.widgetWithText(SwitchListTile, '周期结束后自动移除');
+      expect(t.widget<SwitchListTile>(removeSwitch).value, true);
+      await t.ensureVisible(removeSwitch);
+      await t.tap(removeSwitch);
+      await t.pumpAndSettle();
       expect(
         t.getSize(day).height,
         t.getSize(find.byKey(const ValueKey('node-deadline-time'))).height,
@@ -197,10 +267,11 @@ void main() {
       await t.tap(find.text('确定'));
       await t.pumpAndSettle();
       expect(find.text('截止 16:45'), findsOneWidget);
-      await capture(t, 'todo-deadline-072p2-${phone ? 'mobile' : 'desktop'}');
+      await capture(t, 'todo-retention-073-${phone ? 'mobile' : 'desktop'}');
       await t.tap(find.widgetWithText(FilledButton, '保存'));
       await t.pumpAndSettle();
       expect(saved?.deadlineMinutes, 6 * 1440 + 16 * 60 + 45);
+      expect(saved?.removeAfterCycle, false);
       expect(t.takeException(), isNull);
     });
   }

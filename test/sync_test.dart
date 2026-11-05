@@ -263,7 +263,9 @@ void main() {
       expect(mobile.devices.length, 2);
       final repeatGroup = repeat_fixture.group(
         title: '',
-        nodes: [repeat_fixture.node('node', title: '每轮整理')],
+        nodes: [
+          repeat_fixture.node('node', title: '每轮整理', removeAfterCycle: false),
+        ],
       );
       await aRepo.saveEvent(repeatGroup);
       await desktop.poll(force: true);
@@ -272,6 +274,7 @@ void main() {
         (e) => e.id == repeatGroup.id,
       );
       expect(receivedGroup.toJson(), repeatGroup.toJson());
+      expect(receivedGroup.todoRepeat!.nodes.single.removeAfterCycle, false);
       final currentRepeat = resolveTodos(
         [receivedGroup],
         CalendarService(),
@@ -289,6 +292,16 @@ void main() {
       ).firstWhere((e) => e.id == currentRepeat.id);
       expect(resolvedRepeat.completed, true);
       expect(resolvedRepeat.reminderOffsets, [10]);
+      final nextCycle = resolveTodos(
+        await aRepo.loadEvents(),
+        CalendarService(),
+        DateTime(2026, 11, 6),
+      ).where((e) => e.seriesId == repeatGroup.id).toList();
+      expect(nextCycle, hasLength(2));
+      expect(
+        nextCycle.singleWhere((e) => e.id == currentRepeat.id).completed,
+        true,
+      );
       // Loss of the active token still has a stable installation proof.
       await mobile.credentials.clear();
       mobile.identity = null;
