@@ -1,6 +1,16 @@
 # 日程表交接
 
-更新于2026-11-04。项目 `D:\projects\日程表`，Flutter/Dart，Git主分支main，远端为 https://github.com/Nekobenzene/warm-calendar 。当前正式版本0.7.0+9。历史记录存于 `verification/HANDOFF-before-0.5.md`，其中旧限制不代表当前状态。界面规范见 `DESIGN.md`，数据来源见 `THIRD_PARTY.md`。
+## 0.7.1 待办样式微调（2026-11-05）
+
+- 版本 0.7.1+10。待办行取消固定大高度，按标题、完整备注与时间信息计算行高；跳转定位改为累加实际行高。普通模式移除左侧完成框，多选模式保留勾选。
+- 卡片点击不进入编辑。桌面右侧直接显示编辑（深灰）、完成/未完成（绿）、删除（红），悬停150ms轻阴影；手机继续使用右侧选项。桌面去除拖动开关，两端统一长按重排，原重要程度/筛选限制与边缘滚动保留。
+- 手动完成待办前确认，覆盖手机选项、桌面按钮、首页全部待办及批量完成；恢复未完成无需确认，自动完成仍遵循设置。
+- 全局开关关闭轨道与主题canvas一致，保留边框识别。安装器默认不勾选桌面快捷方式，本机升级取消此任务并清理原应用快捷方式，开始菜单保留。
+- 本机已通过安装向导更新至0.7.1+10并重新运行，主程序SHA256与构建一致，见verification/installed-official-0.7.1.json；安装日志verification/install-official-0.7.1.log。桌面上已无指向正式安装的应用快捷方式。两端安装包与SHA256SUMS.txt在dist/releases/0.7.1/。用户已授权发布0.7.1；目标main、标签v0.7.1与正式latest，发布入口https://github.com/Nekobenzene/warm-calendar/releases/tag/v0.7.1 。正式发布后旧版通过设置→关于→检查更新获取；本机已是0.7.1，无需重复安装。
+- 相关7项widget用例通过：两端紧凑布局与编辑入口/完成取消、批量确认、长备注/大字、远处定位、两端长按重排和边缘滚动。日志 verification/tests-0.7.1-ui.log。没有跑无关全套；静态分析无问题，APK包名/版本/签名与正式升级要求一致；未进行Android真机验收。
+
+
+更新于2026-11-05。项目 `D:\projects\日程表`，Flutter/Dart，Git主分支main，远端为 https://github.com/Nekobenzene/warm-calendar 。本机及待发布版本0.7.1+10，GitHub已发布版本0.7.0+9。历史记录存于 `verification/HANDOFF-before-0.5.md`，其中旧限制不代表当前状态。界面规范见 `DESIGN.md`，数据来源见 `THIRD_PARTY.md`。
 
 ## 本轮0.7.0正式发布与本机更新
 

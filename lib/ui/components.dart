@@ -319,10 +319,7 @@ class _EventOptionsButtonState extends State<EventOptionsButton> {
       await deleteEvent(context, widget.controller, widget.event);
     }
     if (value == 'complete' && mounted) {
-      await runAction(
-        context,
-        () => widget.controller.toggleCompleted(widget.event),
-      );
+      await completeEvent(context, widget.controller, widget.event);
     }
     if (value == 'edit') widget.onEdit();
   }
@@ -401,6 +398,40 @@ class _EventOptionsButtonState extends State<EventOptionsButton> {
     );
   }
 }
+
+Future<void> completeEvent(
+  BuildContext context,
+  AppController controller,
+  ScheduleEvent event,
+) async {
+  if (event.isTodo && !event.completed) {
+    final confirmed = await confirmTodoCompletion(context, event.title);
+    if (!confirmed || !context.mounted) return;
+  }
+  if (context.mounted) {
+    await runAction(context, () => controller.toggleCompleted(event));
+  }
+}
+
+Future<bool> confirmTodoCompletion(BuildContext context, String title) async =>
+    await showAppDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('完成待办'),
+        content: Text('将“$title”标为已完成？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('完成'),
+          ),
+        ],
+      ),
+    ) ==
+    true;
 
 class EmptyState extends StatelessWidget {
   final String message;

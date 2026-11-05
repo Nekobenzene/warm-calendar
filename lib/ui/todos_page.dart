@@ -23,11 +23,11 @@ class TodosPage extends StatefulWidget {
 class TodosPageState extends State<TodosPage> {
   final _scroll = ScrollController();
   TodoFilter _filter = TodoFilter.pending;
-  bool _multi = false, _drag = false, _busy = false;
+  bool _multi = false, _busy = false;
   final _selected = <String>{};
   String? _highlight;
   int _focusRevision = 0;
-  double _extent = 126;
+  List<double> _extents = [];
   List<ScheduleEvent> get _visible => widget.controller.todos
       .where((e) => matchesTodo(e, _filter, widget.controller.now))
       .toList();
@@ -54,10 +54,9 @@ class TodosPageState extends State<TodosPage> {
       final index = _visible.indexWhere((e) => e.id == id);
       if (index < 0) return;
       final offset =
-          (index * _extent - _scroll.position.viewportDimension * .25).clamp(
-            0.0,
-            _scroll.position.maxScrollExtent,
-          );
+          (_extents.take(index).fold<double>(0, (a, b) => a + b) -
+                  _scroll.position.viewportDimension * .25)
+              .clamp(0.0, _scroll.position.maxScrollExtent);
       if (MediaQuery.disableAnimationsOf(context)) {
         _scroll.jumpTo(offset);
       } else {
@@ -77,6 +76,12 @@ class TodosPageState extends State<TodosPage> {
   Future<void> _batch({bool? completed, bool delete = false}) async {
     if (_busy || _selected.isEmpty) return;
     final ids = Set<String>.from(_selected);
+    if (completed == true && !delete) {
+      if (!await confirmTodoCompletion(context, '选中的 ${ids.length} 项待办') ||
+          !mounted) {
+        return;
+      }
+    }
     if (delete) {
       final yes = await showAppDialog<bool>(
         context: context,
@@ -157,10 +162,8 @@ class TodosPageState extends State<TodosPage> {
         c.settings.todoSort == TodoSort.importance &&
         (_filter == TodoFilter.pending || _filter == TodoFilter.overdue) &&
         !_multi;
-    final dragEnabled = reorderAllowed && (phone || _drag) && !_busy;
-    _extent =
-        (phone ? 142.0 : 124.0) *
-        math.max(1, MediaQuery.textScalerOf(context).scale(1));
+    final dragEnabled = reorderAllowed && !_busy;
+
     Widget row(int index) {
       final e = tasks[index];
       final child = AnimatedContainer(
@@ -180,8 +183,6 @@ class TodosPageState extends State<TodosPage> {
                     setState(() {
                       if (!_selected.add(e.id)) _selected.remove(e.id);
                     });
-                  } else {
-                    openTodoEditor(context, c, task: e);
                   }
                 },
           child: Padding(
@@ -200,13 +201,6 @@ class TodosPageState extends State<TodosPage> {
                               _selected.remove(e.id);
                             }
                           }),
-                  )
-                else
-                  Checkbox(
-                    value: e.completed,
-                    onChanged: _busy
-                        ? null
-                        : (_) => runAction(context, () => c.toggleCompleted(e)),
                   ),
                 const SizedBox(width: 4),
                 Container(
@@ -239,8 +233,6 @@ class TodosPageState extends State<TodosPage> {
                           padding: const EdgeInsets.only(top: 3),
                           child: Text(
                             e.notes,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.muted,
@@ -262,21 +254,34 @@ class TodosPageState extends State<TodosPage> {
                     ],
                   ),
                 ),
-                if (!_multi)
+                if (!_multi && phone)
                   EventOptionsButton(
                     event: e,
                     controller: c,
                     onEdit: () => openTodoEditor(context, c, task: e),
                   ),
-                if (dragEnabled && !phone)
-                  const Padding(
-                    padding: EdgeInsets.only(left: 4),
-                    child: Icon(
-                      Icons.drag_indicator,
-                      size: 18,
-                      color: AppColors.muted,
-                    ),
+                if (!_multi && !phone) ...[
+                  const SizedBox(width: 12),
+                  _TodoAction(
+                    label: '编辑',
+                    color: AppColors.text,
+                    onPressed: _busy
+                        ? null
+                        : () => openTodoEditor(context, c, task: e),
                   ),
+                  _TodoAction(
+                    label: e.completed ? '未完成' : '完成',
+                    color: const Color(0xff39714b),
+                    onPressed: _busy
+                        ? null
+                        : () => completeEvent(context, c, e),
+                  ),
+                  _TodoAction(
+                    label: '删除',
+                    color: AppColors.danger,
+                    onPressed: _busy ? null : () => deleteEvent(context, c, e),
+                  ),
+                ],
               ],
             ),
           ),
@@ -284,17 +289,11 @@ class TodosPageState extends State<TodosPage> {
       );
       return KeyedSubtree(
         key: ValueKey(e.id),
-        child: phone
-            ? ReorderableDelayedDragStartListener(
-                index: index,
-                enabled: dragEnabled,
-                child: child,
-              )
-            : ReorderableDragStartListener(
-                index: index,
-                enabled: dragEnabled,
-                child: child,
-              ),
+        child: ReorderableDelayedDragStartListener(
+          index: index,
+          enabled: dragEnabled,
+          child: child,
+        ),
       );
     }
 
@@ -377,17 +376,6 @@ class TodosPageState extends State<TodosPage> {
                     }),
               child: Text(_multi ? '退出多选' : '多选'),
             ),
-            if (reorderAllowed && !phone)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('拖动'),
-                  Switch(
-                    value: _drag,
-                    onChanged: _busy ? null : (v) => setState(() => _drag = v),
-                  ),
-                ],
-              ),
           ],
         ),
         if (_multi)
@@ -438,20 +426,109 @@ class TodosPageState extends State<TodosPage> {
               ? const Center(
                   child: Text('暂无待办', style: TextStyle(color: AppColors.muted)),
                 )
-              : ReorderableListView.builder(
-                  key: const ValueKey('todos-list'),
-                  scrollController: _scroll,
-                  itemExtent: _extent,
-                  buildDefaultDragHandles: false,
-                  onReorderItem: _reorder,
-                  itemCount: tasks.length,
-                  autoScrollerVelocityScalar: 60,
-                  itemBuilder: (_, i) => row(i),
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final textWidth = math.max(
+                      24.0,
+                      constraints.maxWidth -
+                          (phone ? 90 : 254) -
+                          (_multi ? 48 : 0),
+                    );
+                    double textHeight(
+                      String text,
+                      TextStyle style, {
+                      int? maxLines,
+                    }) {
+                      final painter = TextPainter(
+                        text: TextSpan(text: text, style: style),
+                        textDirection: Directionality.of(context),
+                        textScaler: MediaQuery.textScalerOf(context),
+                        maxLines: maxLines,
+                      )..layout(maxWidth: textWidth);
+                      final height = painter.height;
+                      painter.dispose();
+                      return height;
+                    }
+
+                    final bodyStyle = DefaultTextStyle.of(context).style;
+                    _extents = [
+                      for (final task in tasks)
+                        math.max(
+                          phone ? 64.0 : 60.0,
+                          17 +
+                              textHeight(
+                                task.title,
+                                bodyStyle.copyWith(fontWeight: FontWeight.w500),
+                                maxLines: 1,
+                              ) +
+                              (task.notes.isEmpty
+                                  ? 0
+                                  : 3 +
+                                        textHeight(
+                                          task.notes,
+                                          bodyStyle.copyWith(fontSize: 12),
+                                        )) +
+                              5 +
+                              textHeight(
+                                todoDateText(task),
+                                bodyStyle.copyWith(fontSize: 11),
+                                maxLines: 2,
+                              ),
+                        ),
+                    ];
+                    return ReorderableListView.builder(
+                      key: const ValueKey('todos-list'),
+                      scrollController: _scroll,
+                      itemExtentBuilder: (index, _) => _extents[index],
+                      buildDefaultDragHandles: false,
+                      onReorderItem: _reorder,
+                      itemCount: tasks.length,
+                      autoScrollerVelocityScalar: 60,
+                      itemBuilder: (_, i) => row(i),
+                    );
+                  },
                 ),
         ),
       ],
     );
   }
+}
+
+class _TodoAction extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback? onPressed;
+  const _TodoAction({
+    required this.label,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(left: 4),
+    child: ElevatedButton(
+      onPressed: onPressed,
+      style: ButtonStyle(
+        foregroundColor: WidgetStatePropertyAll(color),
+        backgroundColor: WidgetStatePropertyAll(context.appColors.surface),
+        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        shadowColor: WidgetStatePropertyAll(color.withValues(alpha: .20)),
+        elevation: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.hovered) ? 2 : 0,
+        ),
+        minimumSize: const WidgetStatePropertyAll(Size(52, 34)),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 10),
+        ),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        ),
+        animationDuration: const Duration(milliseconds: 150),
+      ),
+      child: Text(label),
+    ),
+  );
 }
 
 Future<void> showTodoOverview(
@@ -496,8 +573,7 @@ Future<void> showTodoOverview(
                   children: [
                     IconButton(
                       tooltip: e.completed ? '标为未完成' : '完成',
-                      onPressed: () =>
-                          runAction(ctx, () => c.toggleCompleted(e)),
+                      onPressed: () => completeEvent(ctx, c, e),
                       icon: Icon(
                         e.completed
                             ? Icons.check_circle

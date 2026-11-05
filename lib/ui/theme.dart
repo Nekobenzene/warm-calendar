@@ -117,6 +117,12 @@ ThemeData appTheme([int seed = 0xff536445]) {
     useMaterial3: true,
     colorScheme: scheme,
     scaffoldBackgroundColor: colors.canvas,
+    switchTheme: SwitchThemeData(
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) =>
+            states.contains(WidgetState.selected) ? null : colors.canvas,
+      ),
+    ),
     extensions: [colors],
     fontFamily: 'NotoSansSC',
     fontFamilyFallback: const ['Microsoft YaHei', 'PingFang SC', 'sans-serif'],

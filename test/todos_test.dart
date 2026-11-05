@@ -64,6 +64,57 @@ void viewport(WidgetTester t, Size size) {
 }
 
 void main() {
+  for (final phone in [false, true]) {
+    testWidgets('${phone ? '手机' : '桌面'}紧凑卡片只从操作入口编辑且完成需确认', (t) async {
+      viewport(t, Size(phone ? 390 : 1000, 844));
+      final c = await controller([
+        task('a', 0),
+        task('b', 1).copyWith(notes: '很长的备注内容，' * 35),
+      ], t);
+      addTearDown(c.dispose);
+      await t.pumpWidget(
+        testApp(
+          AnimatedBuilder(
+            animation: c,
+            builder: (_, _) => TodosPage(controller: c),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.byType(Checkbox), findsNothing);
+      expect(find.byType(Switch), findsNothing);
+      final short = find.byKey(const ValueKey('todo-row-a'));
+      final long = find.byKey(const ValueKey('todo-row-b'));
+      expect(t.getSize(short).height, lessThan(100));
+      expect(t.getSize(long).height, greaterThan(t.getSize(short).height));
+      await t.tap(find.text('待办a'));
+      await t.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      if (phone) {
+        await t.tap(find.byKey(const ValueKey('event-options-a')));
+        await t.pumpAndSettle();
+        await t.tap(find.text('标为已完成'));
+      } else {
+        await t.tap(find.widgetWithText(ElevatedButton, '完成').first);
+      }
+      await t.pumpAndSettle();
+      expect(c.todos.first.completed, false);
+      await t.tap(find.text('取消'));
+      await t.pumpAndSettle();
+      expect(c.todos.first.completed, false);
+      if (phone) {
+        await t.tap(find.byKey(const ValueKey('event-options-a')));
+        await t.pumpAndSettle();
+        await t.tap(find.text('编辑'));
+      } else {
+        await t.tap(find.widgetWithText(ElevatedButton, '编辑').first);
+      }
+      await t.pumpAndSettle();
+      expect(find.text('编辑待办'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  }
+
   testWidgets('排序箭头在200毫秒内平滑旋转并响应连续切换', (t) async {
     var descending = false;
     late StateSetter update;
@@ -301,6 +352,9 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.widgetWithText(TextButton, '完成'));
     await t.pumpAndSettle();
+    expect(c.todos.any((e) => !e.completed), true);
+    await t.tap(find.widgetWithText(FilledButton, '完成'));
+    await t.pumpAndSettle();
     expect(c.todos.every((e) => e.completed), true);
     expect(t.takeException(), isNull);
   });
@@ -406,7 +460,7 @@ void main() {
   }
 
   for (final phone in [false, true]) {
-    testWidgets('${phone ? '手机长按' : '桌面开关'}拖动重排，边缘滚动及倒序保存', (t) async {
+    testWidgets('${phone ? '手机长按' : '桌面长按'}拖动重排，边缘滚动及倒序保存', (t) async {
       viewport(t, Size(phone ? 390 : 1000, 844));
       final c = await controller([
         for (var i = 0; i < 15; i++) task('$i', i),
@@ -421,16 +475,12 @@ void main() {
         ),
       );
       await t.pumpAndSettle();
-      if (!phone) {
-        await t.tap(find.byType(Switch));
-        await t.pumpAndSettle();
-      }
       final first = find.byKey(const ValueKey('todo-row-0'));
       final gesture = await t.startGesture(
         t.getCenter(first),
         kind: phone ? PointerDeviceKind.touch : PointerDeviceKind.mouse,
       );
-      await t.pump(Duration(milliseconds: phone ? 600 : 50));
+      await t.pump(const Duration(milliseconds: 600));
       await gesture.moveBy(const Offset(0, 180));
       await t.pump(const Duration(milliseconds: 400));
       final list = find.byKey(const ValueKey('todos-list'));

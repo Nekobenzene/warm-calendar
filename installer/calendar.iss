@@ -92,7 +92,7 @@ UninstallAppRunningError=日程表仍在运行。请保存编辑中的日程，�
 ConfirmUninstall=确定卸载%1吗？日程、设置和设备连接数据会保留。
 
 [Tasks]
-Name: "desktopicon"; Description: "桌面快捷方式"; GroupDescription: "快捷方式："
+Name: "desktopicon"; Description: "桌面快捷方式"; GroupDescription: "快捷方式："; Flags: unchecked
 Name: "startmenuicon"; Description: "开始菜单快捷方式"; GroupDescription: "快捷方式："
 Name: "startup"; Description: "开机自启动（托盘运行）"; GroupDescription: "启动："; Flags: unchecked
 
