@@ -243,4 +243,10 @@ test('重复待办组、截止提醒和空组标题可同步，旧端跳过新�
   await call('/v1/sync', desktop.credential, {events: [schedule], cursor: 0});
   const current = await call('/v1/sync', phone.credential, {events: [], cursor: 0, supportsTodos: true, supportsRepeatTodos: true, supportsOptionalGroupTitle: true});
   assert.equal(current.events.find(e => e.id === 'blank-schedule').title, '');
+  const automated = event('auto-schedule', {automation: {completeExpired: true, deleteCompleted: true, deleteExpired: false}});
+  await call('/v1/sync', desktop.credential, {events: [automated], cursor: 0, supportsItemAutomation: true});
+  const legacyAutomation = await call('/v1/sync', phone.credential, {events: [], cursor: 0, supportsTodos: true, supportsRepeatTodos: true, supportsOptionalGroupTitle: true});
+  assert.equal(legacyAutomation.events.some(e => e.id === automated.id), false);
+  const currentAutomation = await call('/v1/sync', phone.credential, {events: [], cursor: 0, supportsTodos: true, supportsRepeatTodos: true, supportsOptionalGroupTitle: true, supportsItemAutomation: true});
+  assert.deepEqual(currentAutomation.events.find(e => e.id === automated.id), automated);
 });

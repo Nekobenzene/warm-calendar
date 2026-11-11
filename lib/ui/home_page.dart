@@ -13,12 +13,14 @@ class HomePage extends StatelessWidget {
   final void Function(DateTime) onCalendar;
   final void Function(ScheduleStatus) onStatus;
   final ValueChanged<String>? onTodo;
+  final VoidCallback? onSchedules;
   const HomePage({
     super.key,
     required this.controller,
     required this.onCalendar,
     required this.onStatus,
     this.onTodo,
+    this.onSchedules,
   });
 
   @override
@@ -40,7 +42,7 @@ class HomePage extends StatelessWidget {
         children: [
           _ClockAndDate(controller: controller),
           const SizedBox(height: 16),
-          UpcomingPanel(controller: controller),
+          UpcomingPanel(controller: controller, onSchedules: onSchedules),
           if (onTodo != null) ...[
             const SizedBox(height: 12),
             HomeTodoPanel(controller: controller, onOpen: onTodo!),

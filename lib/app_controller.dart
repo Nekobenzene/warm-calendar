@@ -9,6 +9,7 @@ import 'domain/recurrence.dart';
 import 'domain/reminders.dart';
 import 'domain/holiday_update.dart';
 import 'domain/app_update.dart';
+import 'domain/item_clipboard.dart';
 import 'platform/update_platform.dart' as update_platform;
 import 'platform/notification_service.dart';
 import 'sync/link_controller.dart';
@@ -40,6 +41,25 @@ class AppController extends ChangeNotifier {
         );
   }
   List<ScheduleEvent> _events = [];
+  final clipboard = ItemClipboard();
+  final Map<String, ItemClipboardEntry> _pasteOrigins = {};
+  void copyItem(ScheduleEvent event, {bool cut = false}) {
+    clipboard.put(event, cut: cut);
+    _notify();
+  }
+
+  ScheduleEvent? pasteDraft(bool isTodo, {DateTime? date}) {
+    final draft = clipboard.draft(
+      isTodo,
+      now,
+      date: date,
+      todoOrder: nextTodoOrder,
+    );
+    if (draft != null) _pasteOrigins[draft.id] = clipboard.entry(isTodo)!;
+    return draft;
+  }
+
+  void discardPaste(String id) => _pasteOrigins.remove(id);
   List<ScheduleEvent>? _resolvedEvents;
   AppSettings settings = const AppSettings();
   DateTime now = DateTime.now();
@@ -307,7 +327,32 @@ class AppController extends ChangeNotifier {
     );
   }
 
-  Future<void> saveEvent(ScheduleEvent event) => _serialize(() async {
+  Future<void> saveEvent(
+    ScheduleEvent event, {
+    Set<String> clipboardDraftIds = const {},
+  }) => _serialize(() async {
+    final pasteIds = {
+      event.id,
+      ...clipboardDraftIds,
+      ...?event.recurrence?.nodes
+          .map((n) => n.pasteDraftId)
+          .whereType<String>(),
+      ...?event.todoRepeat?.nodes
+          .map((n) => n.item.pasteDraftId)
+          .whereType<String>(),
+    };
+    final cuts = <String, ScheduleEvent>{};
+    for (final id in pasteIds) {
+      final paste = _pasteOrigins[id];
+      if (paste?.cut != true) continue;
+      final source = allItems.where((e) => e.id == paste!.item.id).firstOrNull;
+      if (source == null ||
+          source.id == event.id ||
+          jsonEncode(source.toJson()) != jsonEncode(paste!.item.toJson())) {
+        throw const FormatException('剪切来源已变更，请重新剪切');
+      }
+      cuts[source.id] = source;
+    }
     ScheduleEvent.fromJson(event.toJson());
     if (event.todoRepeat != null) {
       resolveTodos(
@@ -330,6 +375,7 @@ class AppController extends ChangeNotifier {
       // Retain the old rule as a tombstone so old exceptions never resurrect.
       final single = ScheduleEvent(
         id: '${event.id}-single-${DateTime.now().microsecondsSinceEpoch}',
+        automation: event.automation,
         isTodo: event.isTodo,
         hasDeadline: event.hasDeadline,
         taskCreatedAt: event.taskCreatedAt,
@@ -348,9 +394,25 @@ class AppController extends ChangeNotifier {
         nodeId: event.nodeId,
         updatedAt: event.updatedAt,
       );
-      await _persistEvents([old!.copyWith(deleted: true), single]);
+      await _persistEvents([
+        old!.copyWith(deleted: true),
+        single,
+        ...cuts.values.map((e) => e.copyWith(deleted: true)),
+      ]);
+    } else if (cuts.isNotEmpty) {
+      await _persistEvents([
+        event,
+        ...cuts.values.map((e) => e.copyWith(deleted: true)),
+      ]);
     } else {
       await _persistEvent(event);
+    }
+    final copied = clipboard.entry(event.isTodo);
+    if (copied != null && cuts.containsKey(copied.item.id)) {
+      clipboard.put(copied.item);
+    }
+    for (final id in pasteIds) {
+      _pasteOrigins.remove(id);
     }
     await _completeExpired();
     await _syncNotifications();
@@ -479,7 +541,13 @@ class AppController extends ChangeNotifier {
         .where((e) => e.id == event.id && !e.deleted)
         .firstOrNull;
     if (current == null) return;
-    await _persistEvent(current.copyWith(completed: !current.completed));
+    final completing = !current.completed;
+    await _persistEvent(
+      current.copyWith(
+        completed: completing,
+        deleted: completing && current.automation.deleteCompleted,
+      ),
+    );
     await _syncNotifications();
     _checkReminders();
     _notify();
@@ -549,23 +617,60 @@ class AppController extends ChangeNotifier {
 
   Future<void> _completeExpired() async {
     automationError = null;
-    if (!settings.autoCompleteExpired && !settings.autoCompleteTodos) return;
-    _checkReminders();
-    try {
-      for (final event in allItems.where(
+    if (settings.autoCompleteExpired || settings.autoCompleteTodos) {
+      final migrated = <ScheduleEvent>[];
+      for (final e in _events.where(
         (e) =>
+            !e.deleted &&
             (e.isTodo
                 ? settings.autoCompleteTodos
-                : settings.autoCompleteExpired) &&
-            e.statusAt(now) == ScheduleStatus.overdue,
+                : settings.autoCompleteExpired),
       )) {
+        final json = e.toJson();
+        json['automation'] = e.automation
+            .copyWith(completeExpired: true)
+            .toJson();
+        final repeat = json[e.isTodo ? 'todoRepeat' : 'recurrence'] as Map?;
+        final nodes = repeat?['nodes'] as List?;
+        for (final raw in nodes ?? []) {
+          final item = e.isTodo ? (raw as Map)['item'] as Map : raw as Map;
+          item['automation'] = ItemAutomation.fromJson(
+            Map<String, dynamic>.from(item['automation'] as Map? ?? {}),
+          ).copyWith(completeExpired: true).toJson();
+        }
+        migrated.add(ScheduleEvent.fromJson(json));
+      }
+      if (migrated.isNotEmpty) await _persistEvents(migrated);
+      settings = settings.copyWith(
+        autoCompleteExpired: false,
+        autoCompleteTodos: false,
+      );
+      await repository.saveSettings(settings);
+    }
+    _checkReminders();
+    try {
+      for (final event in allItems.toList()) {
+        final rule = event.automation;
+        final overdue = event.statusAt(now) == ScheduleStatus.overdue;
+        final complete = !event.completed && overdue && rule.completeExpired;
+        final delete =
+            (event.completed || complete) && rule.deleteCompleted ||
+            overdue &&
+                rule.deleteExpired &&
+                event.seriesId == null &&
+                event.recurrence == null &&
+                event.todoRepeat == null;
+        if (!complete && !delete) continue;
         await _persistEvent(
-          event.copyWith(completed: true),
+          event.copyWith(
+            completed: complete ? true : null,
+            deleted: delete ? true : null,
+          ),
           preserveReminder: event.isPoint,
         );
       }
     } catch (_) {
-      automationError = '自动完成失败，未保存的逾期日程已保留，将自动重试。';
+      automationError = '自动处理失败，未保存的事项已保留，将自动重试。';
     }
   }
 

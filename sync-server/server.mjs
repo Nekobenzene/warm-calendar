@@ -265,7 +265,8 @@ export function createSyncServer({ database = ':memory:', allowedOrigins = [], n
             groupId: device.group_id, cursor: page.length ? page.at(-1).sequence : current,
             hasMore: rows.length > page.length, events: page.map(r => JSON.parse(r.payload)).filter(e => (input.supportsTodos === true || e.isTodo !== true) &&
               (input.supportsRepeatTodos === true || !(e.isTodo && (e.todoRepeat || e.seriesId || e.reminderOffsets?.length))) &&
-              (input.supportsOptionalGroupTitle === true || e.title.trim().length > 0)), ...state(device) };
+              (input.supportsOptionalGroupTitle === true || e.title.trim().length > 0) &&
+              (input.supportsItemAutomation === true || ![e.automation, ...(e.recurrence?.nodes ?? []).map(n => n.automation), ...(e.todoRepeat?.nodes ?? []).map(n => n.item?.automation)].some(a => a && (a.completeExpired || a.deleteCompleted || a.deleteExpired)))), ...state(device) };
         });
         send(200, output); return;
       }

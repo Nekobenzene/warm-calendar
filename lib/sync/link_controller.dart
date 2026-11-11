@@ -353,6 +353,7 @@ class LinkController extends ChangeNotifier {
           'cursor': position.cursor,
           'supportsTodos': true,
             'supportsRepeatTodos': true,
+            'supportsItemAutomation': true,
             'supportsOptionalGroupTitle': true,
           'events': pending.map((p) => p.event.toJson()).toList(),
           'settings': ?preferences,

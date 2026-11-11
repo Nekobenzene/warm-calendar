@@ -14,8 +14,9 @@ import 'sync/sync_store.dart';
 import 'sync/background_sync.dart';
 import 'sync/local_relay.dart';
 import 'version.dart';
+import 'domain/preview_examples.dart';
 
-void main(List<String> args) {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) SemanticsBinding.instance.ensureSemantics();
   final verification = args.contains('--verification') || isLocalPreview;
@@ -27,13 +28,15 @@ void main(List<String> args) {
         ? 'warm_calendar_verification'
         : appDatabaseName,
   );
+  final repository = SqliteScheduleRepository(db);
+  if (isLocalPreview) await seedPreviewData(repository, DateTime.now());
   initializeBackgroundSync().catchError((Object e) {
     debugPrint('Background sync initialization failed: $e');
   });
   runApp(
     CalendarApp(
       controller: AppController(
-        repository: SqliteScheduleRepository(db),
+        repository: repository,
         link: LinkController(
           prepareServer: resumeLocalRelay,
           store: SqliteSyncStore(db),

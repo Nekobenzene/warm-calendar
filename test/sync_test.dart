@@ -264,7 +264,18 @@ void main() {
       final repeatGroup = repeat_fixture.group(
         title: '',
         nodes: [
-          repeat_fixture.node('node', title: '每轮整理', removeAfterCycle: false),
+          TodoRepeatNode(
+            item: repeat_fixture
+                .node('node', title: '每轮整理')
+                .item
+                .copyWith(
+                  automation: const ItemAutomation(
+                    completeExpired: true,
+                    deleteCompleted: true,
+                  ),
+                ),
+            removeAfterCycle: false,
+          ),
         ],
       );
       await aRepo.saveEvent(repeatGroup);

@@ -4,6 +4,7 @@ import '../app_controller.dart';
 import '../domain/models.dart';
 import '../domain/todos.dart';
 import 'components.dart';
+import 'item_context_menu.dart';
 import 'motion.dart';
 import 'theme.dart';
 import 'todo_editor.dart';
@@ -292,209 +293,221 @@ class TodosPageState extends State<TodosPage> {
         child: ReorderableDelayedDragStartListener(
           index: index,
           enabled: dragEnabled,
-          child: child,
+          child: ItemContextMenu(controller: c, event: e, child: child),
         ),
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          spacing: 4,
-          runSpacing: 4,
-          children: [
-            for (final filter in TodoFilter.values)
-              ChoiceChip(
-                label: Text(filter.label),
-                selected: _filter == filter,
-                onSelected: _busy
-                    ? null
-                    : (_) => setState(() {
-                        _filter = filter;
-                        _selected.clear();
-                        _focusRevision++;
-                      }),
-              ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: 145,
-              child: DropdownButtonFormField<TodoSort>(
-                isExpanded: true,
-                initialValue: c.settings.todoSort,
-                decoration: const InputDecoration(
-                  labelText: '排序方式',
-                  isDense: true,
-                ),
-                items: [
-                  for (final s in TodoSort.values)
-                    DropdownMenuItem(
-                      value: s,
-                      child: Text(s.label, overflow: TextOverflow.ellipsis),
-                    ),
-                ],
-                onChanged: _busy
-                    ? null
-                    : (s) => runAction(
-                        context,
-                        () =>
-                            c.updateSettings(c.settings.copyWith(todoSort: s)),
-                      ),
-              ),
-            ),
-            IconButton(
-              tooltip: c.settings.todoSortDescending
-                  ? '倒序，点击切换正序'
-                  : '正序，点击切换倒序',
-              onPressed: _busy
-                  ? null
-                  : () => runAction(
-                      context,
-                      () => c.updateSettings(
-                        c.settings.copyWith(
-                          todoSortDescending: !c.settings.todoSortDescending,
-                        ),
-                      ),
-                    ),
-              icon: SortDirectionIcon(
-                descending: c.settings.todoSortDescending,
-              ),
-            ),
-            OutlinedButton(
-              onPressed: _busy
-                  ? null
-                  : () => setState(() {
-                      _multi = !_multi;
-                      _selected.clear();
-                    }),
-              child: Text(_multi ? '退出多选' : '多选'),
-            ),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.repeat, size: 18),
-              label: const Text('重复组'),
-              onPressed: () => showTodoGroups(context, c),
-            ),
-          ],
-        ),
-        if (_multi)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text('已选 ${chosen.length}'),
-                TextButton(
-                  onPressed: _busy
+    return ItemContextMenu(
+      controller: c,
+      isTodo: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              for (final filter in TodoFilter.values)
+                ChoiceChip(
+                  label: Text(filter.label),
+                  selected: _filter == filter,
+                  onSelected: _busy
                       ? null
-                      : () => setState(() {
-                          if (_selected.length == tasks.length) {
-                            _selected.clear();
-                          } else {
-                            _selected.addAll(visibleIds);
-                          }
+                      : (_) => setState(() {
+                          _filter = filter;
+                          _selected.clear();
+                          _focusRevision++;
                         }),
-                  child: Text(_selected.length == tasks.length ? '取消全选' : '全选'),
                 ),
-                TextButton(
-                  onPressed: !_busy && canComplete
-                      ? () => _batch(completed: true)
-                      : null,
-                  child: const Text('完成'),
-                ),
-                TextButton(
-                  onPressed: !_busy && canRestore
-                      ? () => _batch(completed: false)
-                      : null,
-                  child: const Text('未完成'),
-                ),
-                TextButton(
-                  onPressed: !_busy && chosen.isNotEmpty
-                      ? () => _batch(delete: true)
-                      : null,
-                  child: const Text('删除'),
-                ),
-              ],
-            ),
+            ],
           ),
-        const SizedBox(height: 10),
-        Expanded(
-          child: tasks.isEmpty
-              ? const Center(
-                  child: Text('暂无待办', style: TextStyle(color: AppColors.muted)),
-                )
-              : LayoutBuilder(
-                  builder: (context, constraints) {
-                    final textWidth = math.max(
-                      24.0,
-                      constraints.maxWidth -
-                          (phone ? 90 : 254) -
-                          (_multi ? 48 : 0),
-                    );
-                    double textHeight(
-                      String text,
-                      TextStyle style, {
-                      int? maxLines,
-                    }) {
-                      final painter = TextPainter(
-                        text: TextSpan(text: text, style: style),
-                        textDirection: Directionality.of(context),
-                        textScaler: MediaQuery.textScalerOf(context),
-                        maxLines: maxLines,
-                      )..layout(maxWidth: textWidth);
-                      final height = painter.height;
-                      painter.dispose();
-                      return height;
-                    }
-
-                    final bodyStyle = DefaultTextStyle.of(context).style;
-                    _extents = [
-                      for (final task in tasks)
-                        math.max(
-                          phone ? 64.0 : 60.0,
-                          17 +
-                              textHeight(
-                                task.title,
-                                bodyStyle.copyWith(fontWeight: FontWeight.w500),
-                                maxLines: 1,
-                              ) +
-                              (task.notes.isEmpty
-                                  ? 0
-                                  : 3 +
-                                        textHeight(
-                                          task.notes,
-                                          bodyStyle.copyWith(fontSize: 12),
-                                        )) +
-                              5 +
-                              textHeight(
-                                todoDateText(task),
-                                bodyStyle.copyWith(fontSize: 11),
-                                maxLines: 2,
-                              ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 145,
+                child: DropdownButtonFormField<TodoSort>(
+                  isExpanded: true,
+                  initialValue: c.settings.todoSort,
+                  decoration: const InputDecoration(
+                    labelText: '排序方式',
+                    isDense: true,
+                  ),
+                  items: [
+                    for (final s in TodoSort.values)
+                      DropdownMenuItem(
+                        value: s,
+                        child: Text(s.label, overflow: TextOverflow.ellipsis),
+                      ),
+                  ],
+                  onChanged: _busy
+                      ? null
+                      : (s) => runAction(
+                          context,
+                          () => c.updateSettings(
+                            c.settings.copyWith(todoSort: s),
+                          ),
                         ),
-                    ];
-                    return ReorderableListView.builder(
-                      key: const ValueKey('todos-list'),
-                      scrollController: _scroll,
-                      itemExtentBuilder: (index, _) => _extents[index],
-                      buildDefaultDragHandles: false,
-                      onReorderItem: _reorder,
-                      itemCount: tasks.length,
-                      autoScrollerVelocityScalar: 60,
-                      itemBuilder: (_, i) => row(i),
-                    );
-                  },
                 ),
-        ),
-      ],
+              ),
+              IconButton(
+                tooltip: c.settings.todoSortDescending
+                    ? '倒序，点击切换正序'
+                    : '正序，点击切换倒序',
+                onPressed: _busy
+                    ? null
+                    : () => runAction(
+                        context,
+                        () => c.updateSettings(
+                          c.settings.copyWith(
+                            todoSortDescending: !c.settings.todoSortDescending,
+                          ),
+                        ),
+                      ),
+                icon: SortDirectionIcon(
+                  descending: c.settings.todoSortDescending,
+                ),
+              ),
+              OutlinedButton(
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                        _multi = !_multi;
+                        _selected.clear();
+                      }),
+                child: Text(_multi ? '退出多选' : '多选'),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.repeat, size: 18),
+                label: const Text('重复组'),
+                onPressed: () => showTodoGroups(context, c),
+              ),
+            ],
+          ),
+          if (_multi)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text('已选 ${chosen.length}'),
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() {
+                            if (_selected.length == tasks.length) {
+                              _selected.clear();
+                            } else {
+                              _selected.addAll(visibleIds);
+                            }
+                          }),
+                    child: Text(
+                      _selected.length == tasks.length ? '取消全选' : '全选',
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: !_busy && canComplete
+                        ? () => _batch(completed: true)
+                        : null,
+                    child: const Text('完成'),
+                  ),
+                  TextButton(
+                    onPressed: !_busy && canRestore
+                        ? () => _batch(completed: false)
+                        : null,
+                    child: const Text('未完成'),
+                  ),
+                  TextButton(
+                    onPressed: !_busy && chosen.isNotEmpty
+                        ? () => _batch(delete: true)
+                        : null,
+                    child: const Text('删除'),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: tasks.isEmpty
+                ? const Center(
+                    child: Text(
+                      '暂无待办',
+                      style: TextStyle(color: AppColors.muted),
+                    ),
+                  )
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final textWidth = math.max(
+                        24.0,
+                        constraints.maxWidth -
+                            (phone ? 90 : 254) -
+                            (_multi ? 48 : 0),
+                      );
+                      double textHeight(
+                        String text,
+                        TextStyle style, {
+                        int? maxLines,
+                      }) {
+                        final painter = TextPainter(
+                          text: TextSpan(text: text, style: style),
+                          textDirection: Directionality.of(context),
+                          textScaler: MediaQuery.textScalerOf(context),
+                          maxLines: maxLines,
+                        )..layout(maxWidth: textWidth);
+                        final height = painter.height;
+                        painter.dispose();
+                        return height;
+                      }
+
+                      final bodyStyle = DefaultTextStyle.of(context).style;
+                      _extents = [
+                        for (final task in tasks)
+                          math.max(
+                            phone ? 64.0 : 60.0,
+                            17 +
+                                textHeight(
+                                  task.title,
+                                  bodyStyle.copyWith(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                ) +
+                                (task.notes.isEmpty
+                                    ? 0
+                                    : 3 +
+                                          textHeight(
+                                            task.notes,
+                                            bodyStyle.copyWith(fontSize: 12),
+                                          )) +
+                                5 +
+                                textHeight(
+                                  todoDateText(task),
+                                  bodyStyle.copyWith(fontSize: 11),
+                                  maxLines: 2,
+                                ),
+                          ),
+                      ];
+                      return ReorderableListView.builder(
+                        key: const ValueKey('todos-list'),
+                        scrollController: _scroll,
+                        itemExtentBuilder: (index, _) => _extents[index],
+                        buildDefaultDragHandles: false,
+                        onReorderItem: _reorder,
+                        itemCount: tasks.length,
+                        autoScrollerVelocityScalar: 60,
+                        itemBuilder: (_, i) => row(i),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }

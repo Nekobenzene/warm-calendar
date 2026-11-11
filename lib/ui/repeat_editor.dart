@@ -5,6 +5,9 @@ import '../domain/recurrence.dart';
 import 'node_editor.dart';
 import 'motion.dart';
 import 'theme.dart';
+import '../app_controller.dart';
+import '../domain/item_clipboard.dart';
+import 'item_context_menu.dart';
 
 Future<RecurrenceRule?> editRepeatRule(
   BuildContext context, {
@@ -14,6 +17,7 @@ Future<RecurrenceRule?> editRepeatRule(
   required DateTime end,
   required bool allDay,
   ScheduleEvent? template,
+  AppController? controller,
 }) => showAppDialog<RecurrenceRule>(
   context: context,
   barrierDismissible: false,
@@ -24,10 +28,12 @@ Future<RecurrenceRule?> editRepeatRule(
     end: end,
     allDay: allDay,
     template: template,
+    controller: controller,
   ),
 );
 
 class _RepeatEditor extends StatefulWidget {
+  final AppController? controller;
   final RecurrenceRule initial;
   final CalendarService calendar;
   final DateTime start, end;
@@ -40,12 +46,42 @@ class _RepeatEditor extends StatefulWidget {
     required this.end,
     required this.allDay,
     this.template,
+    this.controller,
   });
   @override
   State<_RepeatEditor> createState() => _RepeatEditorState();
 }
 
 class _RepeatEditorState extends State<_RepeatEditor> {
+  Widget _clipboard(Widget child, {RecurrenceNode? node}) =>
+      widget.controller == null
+      ? child
+      : ItemContextMenu(
+          controller: widget.controller!,
+          isTodo: false,
+          event: node == null
+              ? null
+              : widget.controller?.events
+                    .where(
+                      (e) =>
+                          e.seriesId == widget.template?.id &&
+                          e.nodeId == node.id,
+                    )
+                    .firstOrNull,
+          onPaste: (draft) => setState(() {
+            if (_nodes.length < 24) {
+              _nodes.add(
+                clipboardNode(
+                  draft,
+                  periodDays: _frequency == RepeatFrequency.monthly
+                      ? 28
+                      : _days,
+                ),
+              );
+            }
+          }),
+          child: child,
+        );
   final _form = GlobalKey<FormState>();
   late RepeatFrequency _frequency = widget.initial.frequency;
   late final _until = TextEditingController(
@@ -73,6 +109,7 @@ class _RepeatEditorState extends State<_RepeatEditor> {
       : [
           for (final m in widget.initial.minutes)
             RecurrenceNode(
+              automation: widget.template?.automation ?? const ItemAutomation(),
               id: 'legacy-$m',
               minute: widget.allDay ? 0 : m,
               durationMinutes: widget.end.difference(widget.start).inMinutes,
@@ -124,6 +161,12 @@ class _RepeatEditorState extends State<_RepeatEditor> {
       context,
       seed,
       _days,
+      controller: widget.controller,
+      sourceEvent: widget.controller?.events
+          .where(
+            (e) => e.seriesId == widget.template?.id && e.nodeId == seed.id,
+          )
+          .firstOrNull,
       monthly: _frequency == RepeatFrequency.monthly,
       fixedStartDay: true,
     );
@@ -181,7 +224,8 @@ class _RepeatEditorState extends State<_RepeatEditor> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => _clipboard(_dialog(context));
+  Widget _dialog(BuildContext context) => Dialog(
     insetPadding: const EdgeInsets.all(12),
     child: ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 620),
@@ -302,26 +346,29 @@ class _RepeatEditorState extends State<_RepeatEditor> {
                         child: ListView(
                           children: [
                             for (var i = 0; i < _nodes.length; i++)
-                              ListTile(
-                                dense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
+                              _clipboard(
+                                ListTile(
+                                  dense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                  ),
+                                  title: Text(
+                                    _nodes[i].title.isEmpty
+                                        ? '节点 ${i + 1} · 使用组标题'
+                                        : _nodes[i].title,
+                                  ),
+                                  subtitle: Text(
+                                    '${pad2(_nodes[i].minute ~/ 60)}:${pad2(_nodes[i].minute % 60)} · ${_nodes[i].isPoint ? '时间点' : '${_nodes[i].durationMinutes}分钟'}',
+                                  ),
+                                  onTap: () => _edit(_nodes[i]),
+                                  trailing: IconButton(
+                                    tooltip: '移除节点',
+                                    onPressed: () =>
+                                        setState(() => _nodes.removeAt(i)),
+                                    icon: const Icon(Icons.close, size: 17),
+                                  ),
                                 ),
-                                title: Text(
-                                  _nodes[i].title.isEmpty
-                                      ? '节点 ${i + 1} · 使用组标题'
-                                      : _nodes[i].title,
-                                ),
-                                subtitle: Text(
-                                  '${pad2(_nodes[i].minute ~/ 60)}:${pad2(_nodes[i].minute % 60)} · ${_nodes[i].isPoint ? '时间点' : '${_nodes[i].durationMinutes}分钟'}',
-                                ),
-                                onTap: () => _edit(_nodes[i]),
-                                trailing: IconButton(
-                                  tooltip: '移除节点',
-                                  onPressed: () =>
-                                      setState(() => _nodes.removeAt(i)),
-                                  icon: const Icon(Icons.close, size: 17),
-                                ),
+                                node: _nodes[i],
                               ),
                           ],
                         ),

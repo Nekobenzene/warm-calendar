@@ -4,6 +4,8 @@ import '../app_controller.dart';
 import '../domain/models.dart';
 import 'node_editor.dart';
 import 'theme.dart';
+import 'item_context_menu.dart';
+import '../domain/item_clipboard.dart';
 
 Widget repeatModeSelector(int value, ValueChanged<int> change) => LayoutBuilder(
   builder: (context, box) {
@@ -51,6 +53,29 @@ class CycleEditor extends StatefulWidget {
 }
 
 class _CycleEditorState extends State<CycleEditor> {
+  Widget _clipboard(Widget child, {RecurrenceNode? node}) => ItemContextMenu(
+    controller: widget.controller,
+    isTodo: false,
+    event: node == null
+        ? null
+        : widget.controller.events
+              .where(
+                (e) => e.seriesId == widget.initial.id && e.nodeId == node.id,
+              )
+              .firstOrNull,
+    onPaste: (draft) => setState(() {
+      if (_nodes.length < 96) {
+        _nodes.add(
+          clipboardNode(
+            draft,
+            day: _day,
+            periodDays: _frequency == RepeatFrequency.monthly ? 28 : _days,
+          ),
+        );
+      }
+    }),
+    child: child,
+  );
   final _form = GlobalKey<FormState>();
   late final _title = TextEditingController(text: widget.initial.title),
       _notes = TextEditingController(text: widget.initial.notes),
@@ -101,6 +126,7 @@ class _CycleEditorState extends State<CycleEditor> {
     return [
       for (var i = 0; i < times.length; i++)
         RecurrenceNode(
+          automation: e.automation,
           id: r == null ? 'node-$i' : 'legacy-${times[i]}',
           minute: e.allDay ? 0 : times[i],
           durationMinutes: e.end.difference(e.start).inMinutes,
@@ -203,8 +229,13 @@ class _CycleEditorState extends State<CycleEditor> {
       context,
       seed,
       _days,
+      controller: widget.controller,
+      sourceEvent: widget.controller.events
+          .where((e) => e.seriesId == widget.initial.id && e.nodeId == seed.id)
+          .firstOrNull,
       monthly: _frequency == RepeatFrequency.monthly,
       weekLabels: _frequency == RepeatFrequency.weekly && _weekLabels,
+      fixedStartDay: true,
     );
     if (node != null && mounted) {
       setState(() {
@@ -269,33 +300,36 @@ class _CycleEditorState extends State<CycleEditor> {
                   child: Text('这一天没有节点', textAlign: TextAlign.center),
                 ),
               for (final n in nodes)
-                ListTile(
-                  dense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                  title: Text(
-                    n.title.isEmpty ? '使用组标题' : n.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    n.allDay
-                        ? '全天 · ${n.durationMinutes ~/ 1440}天'
-                        : '${pad2(n.minute ~/ 60)}:${pad2(n.minute % 60)}${n.isPoint ? ' · 时间点' : ' → ${_label(n.dayOffset + (n.minute + n.durationMinutes) ~/ 1440)} ${pad2((n.minute + n.durationMinutes) % 1440 ~/ 60)}:${pad2((n.minute + n.durationMinutes) % 60)}'}',
-                  ),
-                  leading: Container(
-                    width: 10,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: Color(n.color),
-                      borderRadius: BorderRadius.circular(3),
+                _clipboard(
+                  ListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    title: Text(
+                      n.title.isEmpty ? '使用组标题' : n.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      n.allDay
+                          ? '全天 · ${n.durationMinutes ~/ 1440}天'
+                          : '${pad2(n.minute ~/ 60)}:${pad2(n.minute % 60)}${n.isPoint ? ' · 时间点' : ' → ${_label(n.dayOffset + (n.minute + n.durationMinutes) ~/ 1440)} ${pad2((n.minute + n.durationMinutes) % 1440 ~/ 60)}:${pad2((n.minute + n.durationMinutes) % 60)}'}',
+                    ),
+                    leading: Container(
+                      width: 10,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: Color(n.color),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                    onTap: () => _edit(n),
+                    trailing: IconButton(
+                      tooltip: '移除节点',
+                      onPressed: () => setState(() => _nodes.remove(n)),
+                      icon: const Icon(Icons.close, size: 17),
                     ),
                   ),
-                  onTap: () => _edit(n),
-                  trailing: IconButton(
-                    tooltip: '移除节点',
-                    onPressed: () => setState(() => _nodes.remove(n)),
-                    icon: const Icon(Icons.close, size: 17),
-                  ),
+                  node: n,
                 ),
             ],
           ),
@@ -305,7 +339,8 @@ class _CycleEditorState extends State<CycleEditor> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
+  Widget build(BuildContext context) => _clipboard(_dialog(context));
+  Widget _dialog(BuildContext context) => PopScope(
     canPop: !_saving,
     child: Dialog(
       insetPadding: const EdgeInsets.all(12),

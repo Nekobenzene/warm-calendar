@@ -9,6 +9,7 @@ import '../domain/models.dart';
 import '../domain/time_axis.dart';
 import '../domain/calendar_layout.dart';
 import 'components.dart';
+import 'item_context_menu.dart';
 import 'event_editor.dart';
 import 'theme.dart';
 import 'motion.dart';
@@ -481,7 +482,8 @@ class CalendarPageState extends State<CalendarPage>
     bool longPress = false,
   }) {
     if (_locked || _moving || _pinching) return;
-    if (!_phone && _selectedId == event.id && !longPress) {
+    if (_selectedId == event.id && !longPress) {
+      unawaited(_hidePopover());
       openEventEditor(context, widget.controller, event: event);
       return;
     }
@@ -1080,46 +1082,74 @@ class CalendarPageState extends State<CalendarPage>
             '拖动色块或上下边界',
             style: TextStyle(fontSize: 12, color: context.appColors.accent),
           ),
-        if (_selectedEvent != null && !_locked)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _selectedEvent!.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      if (_selectedEvent!.notes.isNotEmpty)
-                        Text(
-                          _selectedEvent!.notes,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.muted,
+        if (_phone || _selectedEvent != null && !_locked)
+          SizedBox(
+            height: _phone
+                ? 64 * math.max(1, MediaQuery.textScalerOf(context).scale(1))
+                : null,
+            child: _selectedEvent == null || _locked
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _selectedEvent!.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              if (_selectedEvent!.notes.isNotEmpty)
+                                Text(
+                                  _selectedEvent!.notes,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.muted,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                    ],
+                        TextButton.icon(
+                          key: const ValueKey('calendar-delete-selected'),
+                          onPressed: () => deleteEvent(
+                            context,
+                            widget.controller,
+                            _selectedEvent!,
+                          ),
+                          icon: const Icon(Icons.delete_outline, size: 17),
+                          label: const Text('删除'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.danger,
+                          ),
+                        ),
+                        TextButton(
+                          key: const ValueKey('calendar-edit-selected'),
+                          onPressed: () => openEventEditor(
+                            context,
+                            widget.controller,
+                            event: _selectedEvent!,
+                          ),
+                          child: const Text('编辑'),
+                        ),
+                        TextButton(
+                          key: const ValueKey('calendar-complete-selected'),
+                          onPressed: () => completeEvent(
+                            context,
+                            widget.controller,
+                            _selectedEvent!,
+                          ),
+                          child: Text(_selectedEvent!.completed ? '未完成' : '完成'),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                TextButton.icon(
-                  key: const ValueKey('calendar-delete-selected'),
-                  onPressed: () =>
-                      deleteEvent(context, widget.controller, _selectedEvent!),
-                  icon: const Icon(Icons.delete_outline, size: 17),
-                  label: const Text('删除'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.danger,
-                  ),
-                ),
-              ],
-            ),
           ),
       ],
     );
@@ -1145,40 +1175,45 @@ class CalendarPageState extends State<CalendarPage>
           }
           return KeyEventResult.ignored;
         },
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: clearSelection,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _toolbar(),
-              const SizedBox(height: 8),
-              if (_view == CalendarView.month)
-                LayoutBuilder(
-                  builder: (context, box) {
-                    final month = _monthPager();
-                    return !_phone && box.maxWidth >= 1020
-                        ? Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(child: month),
-                              const SizedBox(width: 20),
-                              SizedBox(width: 280, child: _dayDetails()),
-                            ],
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              month,
-                              const SizedBox(height: 16),
-                              _dayDetails(),
-                            ],
-                          );
-                  },
-                )
-              else
-                _timeGrid(),
-            ],
+        child: ItemContextMenu(
+          enabled: !_locked,
+          controller: widget.controller,
+          date: _focusDate,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: clearSelection,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _toolbar(),
+                const SizedBox(height: 8),
+                if (_view == CalendarView.month)
+                  LayoutBuilder(
+                    builder: (context, box) {
+                      final month = _monthPager();
+                      return !_phone && box.maxWidth >= 1020
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: month),
+                                const SizedBox(width: 20),
+                                SizedBox(width: 280, child: _dayDetails()),
+                              ],
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                month,
+                                const SizedBox(height: 16),
+                                _dayDetails(),
+                              ],
+                            );
+                    },
+                  )
+                else
+                  _timeGrid(),
+              ],
+            ),
           ),
         ),
       ),
@@ -1375,37 +1410,43 @@ class CalendarPageState extends State<CalendarPage>
                   Builder(
                     builder: (blockContext) => Padding(
                       padding: const EdgeInsets.only(top: 3),
-                      child: GestureDetector(
-                        onTap: _locked
-                            ? null
-                            : () => _tapEvent(
-                                event,
-                                'month-${event.id}-${dateKey(day)}',
-                                blockContext,
-                              ),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _dragging?.id == event.id
-                                ? Colors.transparent
-                                : Color(event.displayColor),
-                            border: Border.all(
-                              color: _selectedId == event.id
-                                  ? context.appColors.accent
-                                  : context.appColors.canvas,
+                      child: ItemContextMenu(
+                        controller: widget.controller,
+                        event: event,
+                        date: day,
+                        enabled: !_locked,
+                        child: GestureDetector(
+                          onTap: _locked
+                              ? null
+                              : () => _tapEvent(
+                                  event,
+                                  'month-${event.id}-${dateKey(day)}',
+                                  blockContext,
+                                ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 2,
                             ),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: Text(
-                            event.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: blockText(event.displayColor),
+                            decoration: BoxDecoration(
+                              color: _dragging?.id == event.id
+                                  ? Colors.transparent
+                                  : Color(event.displayColor),
+                              border: Border.all(
+                                color: _selectedId == event.id
+                                    ? context.appColors.accent
+                                    : context.appColors.canvas,
+                              ),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: Text(
+                              event.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: blockText(event.displayColor),
+                              ),
                             ),
                           ),
                         ),
@@ -1813,78 +1854,84 @@ class CalendarPageState extends State<CalendarPage>
       final block = '${event.id}-${dateKey(day)}',
           selected = _selectedId == event.id;
       final active = selected && (_selectionBlock == block || !_phone);
-      return CalendarEventInteraction(
-        key: ValueKey('interaction-$block'),
-        selected: selected,
-        enabled: active && !_moving && !_pinching && (!_phone || _mobileDrag),
-        locked: _locked,
-        phone: _phone,
-        resizable: !allDay && !event.isPoint,
-        point: event.isPoint,
-        onTap: () => _tapEvent(event, block, blockContext),
-        onLongPress: () =>
-            _tapEvent(event, block, blockContext, longPress: true),
-        onStart: (mode) => _startDrag(event, mode, blockContext),
-        onUpdate: _dragUpdate,
-        onEnd: _finishDrag,
-        onCancel: _abortDrag,
-        child: event.isPoint && !allDay
-            ? Semantics(
-                label:
-                    '${event.title} ${eventTimeText(event, widget.controller.settings)}',
-                child: _dragging?.id == event.id
-                    ? const SizedBox.expand()
-                    : PointEventMarker(
-                        color: Color(event.displayColor),
-                        tagKey: ValueKey('point-tag-${event.id}'),
-                        phone: _phone,
-                        title: _phone ? null : event.title,
-                      ),
-              )
-            : Opacity(
-                opacity: 1,
-                child: Semantics(
+      return ItemContextMenu(
+        enabled: !_locked,
+        controller: widget.controller,
+        event: event,
+        date: day,
+        child: CalendarEventInteraction(
+          key: ValueKey('interaction-$block'),
+          selected: selected,
+          enabled: active && !_moving && !_pinching && (!_phone || _mobileDrag),
+          locked: _locked,
+          phone: _phone,
+          resizable: !allDay && !event.isPoint,
+          point: event.isPoint,
+          onTap: () => _tapEvent(event, block, blockContext),
+          onLongPress: () =>
+              _tapEvent(event, block, blockContext, longPress: true),
+          onStart: (mode) => _startDrag(event, mode, blockContext),
+          onUpdate: _dragUpdate,
+          onEnd: _finishDrag,
+          onCancel: _abortDrag,
+          child: event.isPoint && !allDay
+              ? Semantics(
                   label:
                       '${event.title} ${eventTimeText(event, widget.controller.settings)}',
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: _dragging?.id == event.id
-                          ? Colors.transparent
-                          : Color(event.displayColor),
-                      borderRadius: BorderRadius.circular(3),
-                      border: _dragging?.id == event.id
-                          ? null
-                          : separator
-                          ? Border.all(
-                              color: blockText(
-                                event.displayColor,
-                              ).withValues(alpha: .32),
-                            )
-                          : Border.all(
-                              color: context.appColors.surface,
-                              width: .5,
-                            ),
-                    ),
-                    child:
-                        _dragging?.id == event.id ||
-                            (_phone && _view == CalendarView.week)
-                        ? const SizedBox.expand()
-                        : Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Text(
-                              '${allDay ? '全天 · ' : ''}${event.title}${allDay ? '' : '\n${clockText(event.start)}'}',
-                              maxLines: allDay ? 1 : 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 11,
-                                height: 1.3,
-                                color: blockText(event.displayColor),
+                  child: _dragging?.id == event.id
+                      ? const SizedBox.expand()
+                      : PointEventMarker(
+                          color: Color(event.displayColor),
+                          tagKey: ValueKey('point-tag-${event.id}'),
+                          phone: _phone,
+                          title: _phone ? null : event.title,
+                        ),
+                )
+              : Opacity(
+                  opacity: 1,
+                  child: Semantics(
+                    label:
+                        '${event.title} ${eventTimeText(event, widget.controller.settings)}',
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: _dragging?.id == event.id
+                            ? Colors.transparent
+                            : Color(event.displayColor),
+                        borderRadius: BorderRadius.circular(3),
+                        border: _dragging?.id == event.id
+                            ? null
+                            : separator
+                            ? Border.all(
+                                color: blockText(
+                                  event.displayColor,
+                                ).withValues(alpha: .32),
+                              )
+                            : Border.all(
+                                color: context.appColors.surface,
+                                width: .5,
+                              ),
+                      ),
+                      child:
+                          _dragging?.id == event.id ||
+                              (_phone && _view == CalendarView.week)
+                          ? const SizedBox.expand()
+                          : Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Text(
+                                '${allDay ? '全天 · ' : ''}${event.title}${allDay ? '' : '\n${clockText(event.start)}'}',
+                                maxLines: allDay ? 1 : 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  height: 1.3,
+                                  color: blockText(event.displayColor),
+                                ),
                               ),
                             ),
-                          ),
+                    ),
                   ),
                 ),
-              ),
+        ),
       );
     },
   );

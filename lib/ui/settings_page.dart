@@ -259,43 +259,6 @@ class _SettingsPageState extends State<SettingsPage> {
             HolidayDataSettings(controller: c),
             ...[
               const SizedBox(height: 28),
-              Text('日程与提醒', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 12),
-              Surface(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 4,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _switchRow(
-                      '过期自动设为已完成',
-                      c.settings.autoCompleteExpired,
-                      (v) => c.updateSettings(
-                        c.settings.copyWith(autoCompleteExpired: v),
-                      ),
-                    ),
-                    _switchRow(
-                      '待办过期自动完成',
-                      c.settings.autoCompleteTodos,
-                      (v) => c.updateSettings(
-                        c.settings.copyWith(autoCompleteTodos: v),
-                      ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 12),
-                      child: Text(
-                        '按结束时间判断；开启后也会处理已有逾期日程。关闭应用期间的事项在下次打开时处理。',
-                        style: TextStyle(fontSize: 12, color: AppColors.muted),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            ...[
-              const SizedBox(height: 28),
 
               Surface(
                 padding: const EdgeInsets.symmetric(

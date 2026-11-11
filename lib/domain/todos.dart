@@ -109,6 +109,7 @@ List<ScheduleEvent> resolveTodos(
         if (allowed != true) continue;
         result.add(
           ScheduleEvent(
+            automation: n.automation,
             id: id,
             isTodo: true,
             hasDeadline: true,

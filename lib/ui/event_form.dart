@@ -9,6 +9,8 @@ import 'reminder_editor.dart';
 import '../domain/reminders.dart';
 import 'cycle_editor.dart';
 import 'holiday_policy_field.dart';
+import 'automation_fields.dart';
+import 'item_context_menu.dart';
 
 class EventEditor extends StatefulWidget {
   final AppController controller;
@@ -42,7 +44,36 @@ class _EventEditorState extends State<EventEditor> {
   late int _mode;
   ScheduleEvent? _cycleDraft;
   bool _saving = false;
+  late ItemAutomation _automation =
+      widget.event?.automation ?? const ItemAutomation();
   String? _error;
+  String? _pasteId;
+  void _paste(ScheduleEvent draft) {
+    setState(() {
+      if (_pasteId != null) widget.controller.discardPaste(_pasteId!);
+      _pasteId = draft.id;
+      _title.text = draft.title;
+      _notes.text = draft.notes;
+      _startDate.text = dateKey(draft.start);
+      _startTime.text = clockText(draft.start);
+      _endDate.text = dateKey(
+        draft.allDay ? draft.end.subtract(const Duration(days: 1)) : draft.end,
+      );
+      _endTime.text = clockText(draft.end);
+      _allDay = draft.allDay;
+      _point = draft.isPoint;
+      _color = draft.color;
+      _doneColor = draft.completedColor;
+      _reminders = draft.reminderOffsets.toList();
+      _reminderSound = draft.reminderSound;
+      _automation = draft.automation.copyWith(
+        deleteExpired: _rule != null || widget.event?.seriesId != null
+            ? false
+            : draft.automation.deleteExpired,
+      );
+    });
+  }
+
   Duration get _shift =>
       Duration(minutes: widget.event?.recurrence?.shiftMinutes ?? 0);
   @override
@@ -171,6 +202,8 @@ class _EventEditorState extends State<EventEditor> {
     ),
   );
   Widget _timeField(String label, TextEditingController c) => TextFormField(
+    readOnly: _mode != 0,
+    onTap: _mode != 0 ? () => _pickTime(c) : null,
     controller: c,
     validator: (v) => RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(v ?? '')
         ? null
@@ -249,6 +282,8 @@ class _EventEditorState extends State<EventEditor> {
                     ? old.nodes[i]
                     : RecurrenceNode(
                         id: old.nodes[i].id,
+                        automation: _automation,
+                        pasteDraftId: old.nodes[i].pasteDraftId,
                         title: old.nodes[i].title,
                         notes: old.nodes[i].notes,
                         minute: _allDay ? 0 : minute,
@@ -298,13 +333,15 @@ class _EventEditorState extends State<EventEditor> {
     }
     final result = await editRepeatRule(
       context,
+      controller: widget.controller,
       initial: _draftRule(frequency, start),
       calendar: widget.controller.calendar,
       start: start,
       end: end,
       allDay: _allDay,
       template: ScheduleEvent(
-        id: 'draft',
+        id: widget.event?.id ?? 'draft',
+        automation: _automation,
         title: _title.text.trim(),
         start: start,
         end: end,
@@ -353,6 +390,7 @@ class _EventEditorState extends State<EventEditor> {
     _doneColor = node.completedColor;
     _reminders = node.reminderOffsets.toList();
     _reminderSound = node.reminderSound;
+    _automation = node.automation;
   }
 
   void _setMode(int mode, [ScheduleEvent? cycle]) {
@@ -384,6 +422,8 @@ class _EventEditorState extends State<EventEditor> {
                   if (previous.nodes.isNotEmpty)
                     RecurrenceNode(
                       id: previous.nodes.first.id,
+                      automation: _automation,
+                      pasteDraftId: previous.nodes.first.pasteDraftId,
                       title: previous.nodes.first.title,
                       notes: previous.nodes.first.notes,
                       dayOffset: previous.nodes.first.dayOffset,
@@ -674,6 +714,7 @@ class _EventEditorState extends State<EventEditor> {
           end: end,
           allDay: _allDay,
           completed: _completed,
+          automation: _automation,
           reminderOffsets: List.unmodifiable(_reminders),
           reminderSound: _reminderSound,
           updatedAt: DateTime.now().toUtc(),
@@ -687,6 +728,7 @@ class _EventEditorState extends State<EventEditor> {
           color: _color,
           completedColor: _doneColor,
         ),
+        clipboardDraftIds: {?_pasteId},
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -702,7 +744,13 @@ class _EventEditorState extends State<EventEditor> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ItemContextMenu(
+    controller: widget.controller,
+    isTodo: false,
+    onPaste: _paste,
+    child: _editor(context),
+  );
+  Widget _editor(BuildContext context) {
     if (_mode == 2) {
       return CycleEditor(
         controller: widget.controller,
@@ -866,6 +914,8 @@ class _EventEditorState extends State<EventEditor> {
                                           ? n
                                           : RecurrenceNode(
                                               id: n.id,
+                                              automation: n.automation,
+                                              pasteDraftId: n.pasteDraftId,
                                               title: n.title,
                                               notes: n.notes,
                                               dayOffset: n.dayOffset,
@@ -920,26 +970,17 @@ class _EventEditorState extends State<EventEditor> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                if (_rule == null)
+                  AutomationFields(
+                    value: _automation,
+                    single: widget.event?.seriesId == null,
+                    onChanged: (v) => setState(() => _automation = v),
+                  ),
                 Wrap(
                   alignment: WrapAlignment.spaceBetween,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   runSpacing: 4,
                   children: [
-                    if (widget.event != null && _rule == null)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Checkbox(
-                            value: _completed,
-                            onChanged: _saving
-                                ? null
-                                : (v) => setState(() => _completed = v!),
-                          ),
-                          const Text('已完成'),
-                        ],
-                      )
-                    else
-                      const SizedBox.shrink(),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

@@ -1,5 +1,26 @@
 # 日程表交接
 
+## 0.7.4 正式发布（2026-11-11）
+
+- 用户验收并授权发布。版本0.7.4+16，发布目标main、标签v0.7.4并设为latest；Windows和Android正式安装包发布至GitHub Release。
+- 包含下方0.7.4预览及后续节点日期布局全部微调。两个新建按钮统一FilledButton.icon；周期节点两行两列，所属日为无下拉入口的固定文本。版本切换恢复正式数据库/通知/设备身份及安卓包名；示例只在预览加入，正式不迁入预览数据。
+- 沿用已通过的相关检查：预览新增10项、节点布局2项、重复待办16项、周期表单3项、双端HTTP同步6项及服务兼容1项；静态分析无问题。最后单处按钮样式和正式版本号只重新打包，无无关全套检查。
+- 逐项自动处理、剪贴板、备份5与旧端兼容策略见下方预览记录。升级需两端及桌面内置同步服务同步更新。
+- 正式发布说明releases/0.7.4.md，附件dist/releases/0.7.4/；构建/身份/签名/发布验证见verification对应0.7.4日志。此轮用户要求发布，尚未要求覆盖本机正式安装；本机已安装的预览继续保留。
+
+
+## 0.7.4 独立预览（2026-11-11）
+
+- 用户要求先出预览。版本0.7.4-preview.1+15；不推送、不发布，不更新正式0.7.3。继续独立Preview数据库/通知/连接身份、4281端口及Android .preview包名；无桌面快捷方式。
+- 手机首页与日历操作布局、钟表时间选择、周期节点固定所属日见releases/0.7.4-preview.1.md；选择条预留位置保证日历不跳动，顶部统一删除/编辑/完成。
+- ItemAutomation写入ScheduleEvent/RecurrenceNode并贯穿展开、例外、备份和同步。一次性才允许deleteExpired；重复自动处理只持久化本次例外/墓碑。旧全局autoComplete迁入现有记录及所有节点，兼容字段保留但界面移除。备份格式5。
+- ItemClipboard日程/待办各保留一份。pasteDraftId仅草稿字段不序列化；目标保存验证来源未变后原子写目标与来源墓碑，取消不删除。重复子项复制/剪切使用展开实例，不删除系列定义；不匹配字段采用默认。剪贴板仅当前运行会话，不跨设备。
+- 新客户端supportsItemAutomation:true，服务对旧客户端过滤启用新规则的记录，防止错误处理。预览两端及内置服务均需升级。
+- 相关验证：tests-0.7.4-preview.log新增10项、tests-repeat-074.log16项、tests-cycle-074.log2项、tests-modes-074.log1项、sync-074.log6项、sync-server-074.log1项通过；analyze-074.log无问题。390×844和1280×800截图preview-074-*.png。只跑相关检查，无localhost上传，无Android真机验收。
+- 补充要求：桌面页头新建日程旁增加同样式实色新建待办；lib/domain/preview_examples.dart在main中仅isLocalPreview时执行，首次写入16组示例。按稳定ID前缀（含墓碑）判断已加入，删除后不复活；不覆盖既有数据，正式构建不执行。示例相对首次启动日，新增用例验证格式/展开与幂等。用户退出后最终预览已安装并重新启动；installed-preview-0.7.4-preview.json确认0.7.4-preview.1+15、实际Flutter代码app.so哈希与最终构建一致，正式0.7.3+14保留。示例16条已在预览库核对，未创建桌面快捷方式。
+- 最终产物dist/previews/0.7.4-preview.1/包含Windows向导、便携包、APK、SHA256SUMS及说明。build-windows/build-installer-0.7.4-preview.log与build-android-0.7.4-preview-final.log记录最终构建成功；Android预览包名、version15/0.7.4-preview.1和历史签名均核对通过，见apk-identity/apk-signature-0.7.4-preview.log。首次Gradle下载超时，恢复本地缓存后成功；不影响最终产物。用户最后要求两个新建按钮相同样式，已统一FilledButton.icon，仅重新打包，未加测无关项目。未推送或发布。
+
+
 ## 0.7.3 周期待办保留设置（2026-11-06）
 
 - 用户授权相关测试通过后直接正式发布，不出预览。版本0.7.3+14。
@@ -206,3 +227,7 @@
 | test/release_05_test.dart | 本轮19项新回归，其余test保留既有回归 |
 
 `.tooling`内一次性改源码/文档脚本已执行，勿重复执行。以实际源码和本文件为准。MSB8029临时联接、依赖的Cupertino字体/Kotlin迁移提示没有导致本轮构建失败，不通过改安全设置处理。
+
+0.7.4预览布局补充：按用户最新要求保留节点原有日期/时间两行两列结构。固定所属日改为同外框的只读文本，无下拉箭头、点击入口或日期修改行为；右列起止时刻对齐，全天时也显示所属日。相关2项节点用例通过（tests-node-layout-074.log），手机390×844及桌面1280×800渲染见node-fixed-day-074-*.png。未运行无关全套。
+
+本轮布局微调已重新完成Windows/APK打包及本机预览更新，app.so哈希核对一致；Android预览身份及原签名验证通过，SHA256SUMS和说明同步更新。正式0.7.3保留。

@@ -5,6 +5,7 @@ import '../domain/models.dart';
 import 'theme.dart';
 import 'motion.dart';
 import 'toast.dart';
+import 'item_context_menu.dart';
 
 class SortDirectionIcon extends StatelessWidget {
   final bool descending;
@@ -154,80 +155,86 @@ class EventRow extends StatelessWidget {
     this.withDate = false,
   });
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 9),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: InkWell(
-            onTap: onEdit,
-            borderRadius: BorderRadius.circular(4),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    event.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: event.completed ? AppColors.muted : AppColors.text,
-                      decoration: event.completed
-                          ? TextDecoration.lineThrough
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 3,
-                    children: [
-                      Text(
-                        eventTimeText(
-                          event,
-                          controller.settings,
-                          withDate: withDate,
-                        ),
-                        style: Theme.of(context).textTheme.bodySmall,
+  Widget build(BuildContext context) => ItemContextMenu(
+    controller: controller,
+    event: event,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: onEdit,
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: event.completed
+                            ? AppColors.muted
+                            : AppColors.text,
+                        decoration: event.completed
+                            ? TextDecoration.lineThrough
+                            : null,
                       ),
-                      if (!event.completed &&
-                          event.end.isBefore(controller.now))
-                        const Text(
-                          '已过期',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.warning,
+                    ),
+                    const SizedBox(height: 5),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 3,
+                      children: [
+                        Text(
+                          eventTimeText(
+                            event,
+                            controller.settings,
+                            withDate: withDate,
                           ),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
-                    ],
-                  ),
-                  if (event.notes.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        event.notes,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
+                        if (!event.completed &&
+                            event.end.isBefore(controller.now))
+                          const Text(
+                            '已过期',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.warning,
+                            ),
+                          ),
+                      ],
                     ),
-                ],
+                    if (event.notes.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          event.notes,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 8),
-        StatusPill(event.statusAt(controller.now)),
-        EventOptionsButton(
-          event: event,
-          controller: controller,
-          onEdit: onEdit,
-        ),
-      ],
+          const SizedBox(width: 8),
+          StatusPill(event.statusAt(controller.now)),
+          EventOptionsButton(
+            event: event,
+            controller: controller,
+            onEdit: onEdit,
+          ),
+        ],
+      ),
     ),
   );
 }

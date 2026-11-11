@@ -5,6 +5,9 @@ import 'holiday_policy_field.dart';
 import 'reminder_editor.dart';
 import 'motion.dart';
 import 'theme.dart';
+import 'automation_fields.dart';
+import '../app_controller.dart';
+import 'item_context_menu.dart';
 
 Future<RecurrenceNode?> editCycleNode(
   BuildContext context,
@@ -13,6 +16,8 @@ Future<RecurrenceNode?> editCycleNode(
   bool monthly = false,
   bool weekLabels = false,
   bool fixedStartDay = false,
+  AppController? controller,
+  ScheduleEvent? sourceEvent,
 }) => showAppDialog<RecurrenceNode>(
   context: context,
   barrierDismissible: false,
@@ -22,10 +27,14 @@ Future<RecurrenceNode?> editCycleNode(
     monthly: monthly,
     weekLabels: weekLabels,
     fixedStartDay: fixedStartDay,
+    controller: controller,
+    sourceEvent: sourceEvent,
   ),
 );
 
 class NodeEditor extends StatefulWidget {
+  final AppController? controller;
+  final ScheduleEvent? sourceEvent;
   final RecurrenceNode initial;
   final int days;
   final bool monthly, weekLabels, fixedStartDay;
@@ -36,6 +45,8 @@ class NodeEditor extends StatefulWidget {
     this.monthly = false,
     this.weekLabels = false,
     this.fixedStartDay = false,
+    this.controller,
+    this.sourceEvent,
   });
   @override
   State<NodeEditor> createState() => _NodeEditorState();
@@ -64,8 +75,32 @@ class _NodeEditorState extends State<NodeEditor> {
   late List<int> _reminders = widget.initial.reminderOffsets.toList();
   late int _color = widget.initial.color, _done = widget.initial.completedColor;
   late HolidayPolicy _holiday = widget.initial.holidayPolicy;
+  late ItemAutomation _automation = widget.initial.automation;
   late WeekendHolidayPriority _priority = widget.initial.weekendHolidayPriority;
   String? _error;
+  String? _pasteId;
+  void _paste(ScheduleEvent draft) {
+    setState(() {
+      if (_pasteId != null) widget.controller?.discardPaste(_pasteId!);
+      _pasteId = draft.id;
+      _title.text = draft.title;
+      _notes.text = draft.notes;
+      _start.text = clockText(draft.start);
+      _end.text = clockText(draft.end);
+      _allDay = draft.allDay;
+      _point = draft.isPoint;
+      _endDay =
+          _day +
+          draft.end.difference(dayOnly(draft.start)).inMinutes ~/ 1440 -
+          (_allDay ? 1 : 0);
+      _color = draft.color;
+      _done = draft.completedColor;
+      _reminders = draft.reminderOffsets.toList();
+      _sound = draft.reminderSound;
+      _automation = draft.automation.copyWith(deleteExpired: false);
+    });
+  }
+
   @override
   void dispose() {
     for (final c in [_title, _notes, _start, _end]) {
@@ -115,7 +150,30 @@ class _NodeEditorState extends State<NodeEditor> {
   );
   Widget _time(String label, TextEditingController field) => TextFormField(
     controller: field,
-    decoration: InputDecoration(labelText: label),
+    readOnly: true,
+    onTap: () async {
+      final value = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay(
+          hour: _minute(field.text) ~/ 60,
+          minute: _minute(field.text) % 60,
+        ),
+        initialEntryMode: TimePickerEntryMode.dial,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!,
+        ),
+      );
+      if (value != null && mounted) {
+        setState(
+          () => field.text = '${pad2(value.hour)}:${pad2(value.minute)}',
+        );
+      }
+    },
+    decoration: InputDecoration(
+      labelText: label,
+      suffixIcon: const Icon(Icons.schedule, size: 18),
+    ),
     validator: (v) => RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(v ?? '')
         ? null
         : '使用HH:mm',
@@ -146,6 +204,8 @@ class _NodeEditorState extends State<NodeEditor> {
               (_allDay ? 1440 : _minute(_end.text)) -
               minute;
     final node = RecurrenceNode(
+      pasteDraftId: _pasteId ?? widget.initial.pasteDraftId,
+      automation: _automation,
       id: widget.initial.id,
       title: _title.text.trim(),
       notes: _notes.text.trim(),
@@ -170,7 +230,16 @@ class _NodeEditorState extends State<NodeEditor> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
+  Widget build(BuildContext context) => widget.controller == null
+      ? _dialog(context)
+      : ItemContextMenu(
+          controller: widget.controller!,
+          event: widget.sourceEvent,
+          isTodo: false,
+          onPaste: _paste,
+          child: _dialog(context),
+        );
+  Widget _dialog(BuildContext context) => Dialog(
     insetPadding: const EdgeInsets.all(12),
     child: ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 580),
@@ -244,7 +313,22 @@ class _NodeEditorState extends State<NodeEditor> {
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          Expanded(child: _dateSelect(false)),
+                          Expanded(
+                            child: widget.fixedStartDay
+                                ? InputDecorator(
+                                    key: const ValueKey('node-fixed-start-day'),
+                                    decoration: const InputDecoration(
+                                      labelText: '所属日',
+                                    ),
+                                    child: Text(
+                                      _dayLabel(_day),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                  )
+                                : _dateSelect(false),
+                          ),
                           if (!_allDay) ...[
                             const SizedBox(width: 10),
                             Expanded(child: _time('开始时间', _start)),
@@ -305,6 +389,10 @@ class _NodeEditorState extends State<NodeEditor> {
                           labelText: '节点备注',
                           counterText: '',
                         ),
+                      ),
+                      AutomationFields(
+                        value: _automation,
+                        onChanged: (v) => setState(() => _automation = v),
                       ),
                       if (_error != null)
                         Padding(

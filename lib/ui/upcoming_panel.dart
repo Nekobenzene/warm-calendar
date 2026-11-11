@@ -8,7 +8,8 @@ import 'theme.dart';
 
 class UpcomingPanel extends StatelessWidget {
   final AppController controller;
-  const UpcomingPanel({super.key, required this.controller});
+  final VoidCallback? onSchedules;
+  const UpcomingPanel({super.key, required this.controller, this.onSchedules});
   @override
   Widget build(BuildContext context) {
     final next = nextScheduledEvent(controller.events, controller.now);
@@ -24,9 +25,28 @@ class UpcomingPanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  '下一项日程',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text(
+                      '下一项日程',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton(
+                          onPressed: () => openEventEditor(context, controller),
+                          child: const Text('新增日程'),
+                        ),
+                        TextButton(
+                          onPressed: onSchedules,
+                          child: const Text('查看日程'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 if (next == null)

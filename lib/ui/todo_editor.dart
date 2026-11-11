@@ -9,6 +9,9 @@ import 'motion.dart';
 import 'reminder_editor.dart';
 import 'holiday_policy_field.dart';
 import 'theme.dart';
+import 'automation_fields.dart';
+import 'item_context_menu.dart';
+import '../domain/item_clipboard.dart';
 
 Future<void> openTodoEditor(
   BuildContext context,
@@ -55,6 +58,7 @@ class TodoEditor extends StatefulWidget {
   final ScheduleEvent? task;
   final bool nodeMode;
   final TodoRepeatNode? repeatNode;
+  final ScheduleEvent? sourceEvent;
   final String groupTitle;
   final int periodDays;
   const TodoEditor({
@@ -63,6 +67,7 @@ class TodoEditor extends StatefulWidget {
     this.task,
     this.nodeMode = false,
     this.repeatNode,
+    this.sourceEvent,
     this.groupTitle = '',
     this.periodDays = 1,
   });
@@ -124,7 +129,46 @@ class _TodoEditorState extends State<TodoEditor> {
       true;
   late final List<TodoRepeatNode> _nodes = [...?widget.task?.todoRepeat?.nodes];
   bool _saving = false;
+  late ItemAutomation _automation =
+      widget.repeatNode?.item.automation ??
+      widget.task?.automation ??
+      const ItemAutomation();
   String? _error;
+  String? _pasteId;
+  void _paste(ScheduleEvent draft) {
+    setState(() {
+      if (_repeat) {
+        if (_nodes.length < 96) {
+          _nodes.add(
+            TodoRepeatNode(
+              item: clipboardNode(
+                draft,
+              ).copyWith(minute: 0, durationMinutes: 0),
+            ),
+          );
+        }
+        return;
+      }
+      if (_pasteId != null) widget.controller.discardPaste(_pasteId!);
+      _pasteId = draft.id;
+      _title.text = draft.title;
+      _notes.text = draft.notes;
+      _color = draft.color;
+      _completedColor = draft.completedColor;
+      _reminders = draft.reminderOffsets.toList();
+      _sound = draft.reminderSound;
+      _automation = draft.automation.copyWith(
+        deleteExpired: widget.nodeMode || _instance
+            ? false
+            : draft.automation.deleteExpired,
+      );
+      if (!widget.nodeMode) {
+        _dated = draft.hasDeadline;
+        _deadline = draft.start;
+      }
+    });
+  }
+
   bool get _instance => widget.task?.seriesId != null;
   int get _days => switch (_frequency) {
     RepeatFrequency.daily => 1,
@@ -171,6 +215,7 @@ class _TodoEditorState extends State<TodoEditor> {
         _nodes.add(
           TodoRepeatNode(
             item: RecurrenceNode(
+              automation: _automation,
               id: _id('item'),
               title: '',
               notes: '',
@@ -196,6 +241,8 @@ class _TodoEditorState extends State<TodoEditor> {
     if (_saving || !_form.currentState!.validate()) return;
     if (widget.nodeMode) {
       final item = RecurrenceNode(
+        pasteDraftId: _pasteId ?? widget.repeatNode?.item.pasteDraftId,
+        automation: _automation,
         id: widget.repeatNode?.item.id ?? _id('item'),
         title: _title.text.trim(),
         notes: _notes.text.trim(),
@@ -238,6 +285,7 @@ class _TodoEditorState extends State<TodoEditor> {
           ? _cycleStart
           : (_dated ? _deadline : old?.start ?? widget.controller.now);
       final task = ScheduleEvent(
+        automation: _automation,
         id: old?.id ?? _id('todo'),
         isTodo: true,
         hasDeadline: !_repeat && _dated,
@@ -268,7 +316,7 @@ class _TodoEditorState extends State<TodoEditor> {
               )
             : null,
       );
-      await widget.controller.saveEvent(task);
+      await widget.controller.saveEvent(task, clipboardDraftIds: {?_pasteId});
       if (mounted) {
         Navigator.pop(context);
         showMessage(context, old == null ? '待办已创建' : '待办已保存');
@@ -406,7 +454,12 @@ class _TodoEditorState extends State<TodoEditor> {
                         reminderOffsets: _reminders,
                         reminderSound: _sound,
                       ))
-                  .copyWith(id: _id('item'), title: '', notes: ''),
+                  .copyWith(
+                    automation: _automation,
+                    id: _id('item'),
+                    title: '',
+                    notes: '',
+                  ),
           deadlineMinutes: last?.deadlineMinutes,
           removeAfterCycle: last?.removeAfterCycle ?? true,
         );
@@ -417,6 +470,11 @@ class _TodoEditorState extends State<TodoEditor> {
         controller: widget.controller,
         nodeMode: true,
         repeatNode: seed,
+        sourceEvent: widget.controller.todos
+            .where(
+              (e) => e.seriesId == widget.task?.id && e.nodeId == seed.item.id,
+            )
+            .firstOrNull,
         groupTitle: _title.text.trim(),
         periodDays: _nodePeriodDays,
       ),
@@ -454,6 +512,11 @@ class _TodoEditorState extends State<TodoEditor> {
   Widget _singleFields() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
+      AutomationFields(
+        value: _automation,
+        single: !widget.nodeMode && !_instance,
+        onChanged: (v) => setState(() => _automation = v),
+      ),
       if (widget.nodeMode)
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
@@ -632,43 +695,55 @@ class _TodoEditorState extends State<TodoEditor> {
             return ReorderableDelayedDragStartListener(
               key: ValueKey(node.item.id),
               index: i,
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  Icons.drag_indicator,
-                  color: context.appColors.input,
-                  size: 20,
+              child: ItemContextMenu(
+                controller: widget.controller,
+                isTodo: true,
+                event: widget.controller.todos
+                    .where(
+                      (e) =>
+                          e.seriesId == widget.task?.id &&
+                          e.nodeId == node.item.id,
+                    )
+                    .firstOrNull,
+                onPaste: _paste,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.drag_indicator,
+                    color: context.appColors.input,
+                    size: 20,
+                  ),
+                  title: Text(
+                    node.item.title.isEmpty
+                        ? (_title.text.trim().isEmpty
+                              ? '待办 ${i + 1}（待填写标题）'
+                              : _title.text.trim())
+                        : node.item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    offset == null
+                        ? '周期结束时截止'
+                        : 'Day${offset ~/ 1440 + 1} ${pad2(offset % 1440 ~/ 60)}:${pad2(offset % 60)} 截止',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: '编辑组内待办',
+                        onPressed: () => _editNode(node),
+                        icon: const Icon(Icons.edit_outlined, size: 19),
+                      ),
+                      IconButton(
+                        tooltip: '移除组内待办',
+                        onPressed: () => setState(() => _nodes.removeAt(i)),
+                        icon: const Icon(Icons.close, size: 19),
+                      ),
+                    ],
+                  ),
+                  onTap: () => _editNode(node),
                 ),
-                title: Text(
-                  node.item.title.isEmpty
-                      ? (_title.text.trim().isEmpty
-                            ? '待办 ${i + 1}（待填写标题）'
-                            : _title.text.trim())
-                      : node.item.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  offset == null
-                      ? '周期结束时截止'
-                      : 'Day${offset ~/ 1440 + 1} ${pad2(offset % 1440 ~/ 60)}:${pad2(offset % 60)} 截止',
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: '编辑组内待办',
-                      onPressed: () => _editNode(node),
-                      icon: const Icon(Icons.edit_outlined, size: 19),
-                    ),
-                    IconButton(
-                      tooltip: '移除组内待办',
-                      onPressed: () => setState(() => _nodes.removeAt(i)),
-                      icon: const Icon(Icons.close, size: 19),
-                    ),
-                  ],
-                ),
-                onTap: () => _editNode(node),
               ),
             );
           },
@@ -682,7 +757,14 @@ class _TodoEditorState extends State<TodoEditor> {
     ],
   );
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => ItemContextMenu(
+    controller: widget.controller,
+    isTodo: true,
+    event: widget.sourceEvent,
+    onPaste: _paste,
+    child: _dialog(context),
+  );
+  Widget _dialog(BuildContext context) => AlertDialog(
     title: Text(
       widget.nodeMode
           ? '组内待办'

@@ -1,6 +1,7 @@
 import 'dart:convert';
 part 'recurrence_node.dart';
 part 'todo_repeat.dart';
+part 'item_automation.dart';
 
 String dateKey(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -231,6 +232,7 @@ extension StatusLabel on ScheduleStatus {
 }
 
 class ScheduleEvent {
+  final ItemAutomation automation;
   // Tasks share the durable record/outbox format, but never become timed
   // schedules. start/end are a zero-length calendar projection when dated.
   final bool isTodo, hasDeadline;
@@ -269,6 +271,7 @@ class ScheduleEvent {
   int get displayColor => completed ? completedColor : color;
 
   const ScheduleEvent({
+    this.automation = const ItemAutomation(),
     this.isTodo = false,
     this.hasDeadline = false,
     this.taskCreatedAt,
@@ -323,6 +326,7 @@ class ScheduleEvent {
       : start.subtract(Duration(minutes: reminderMinutes!));
 
   ScheduleEvent copyWith({
+    ItemAutomation? automation,
     String? title,
     String? notes,
     int? color,
@@ -338,6 +342,7 @@ class ScheduleEvent {
     List<int>? reminderOffsets,
     bool? reminderSound,
   }) => ScheduleEvent(
+    automation: automation ?? this.automation,
     isTodo: isTodo,
     hasDeadline: hasDeadline ?? this.hasDeadline,
     taskCreatedAt: taskCreatedAt,
@@ -375,6 +380,7 @@ class ScheduleEvent {
       if (todoCycleStart != null) 'todoCycleStart': dateKey(todoCycleStart!),
     },
     'id': id,
+    'automation': automation.toJson(),
     'title': title,
     'notes': notes,
     'start': allDay ? dateKey(start) : start.toUtc().toIso8601String(),
@@ -403,6 +409,11 @@ class ScheduleEvent {
     }
 
     final event = ScheduleEvent(
+      automation: ItemAutomation.fromJson(
+        json['automation'] == null
+            ? null
+            : Map<String, dynamic>.from(json['automation'] as Map),
+      ),
       isTodo: json['isTodo'] == true,
       hasDeadline: json['hasDeadline'] == true,
       taskCreatedAt: json['taskCreatedAt'] == null
@@ -722,7 +733,7 @@ class BackupData {
   BackupData(this.events, this.settings);
   String encode() => const JsonEncoder.withIndent('  ').convert({
     'format': 'warm-calendar',
-    'version': 4,
+    'version': 5,
     'exportedAt': DateTime.now().toUtc().toIso8601String(),
     'events': events.map((e) => e.toJson()).toList(),
     'settings': settings.toJson(),
@@ -734,7 +745,7 @@ class BackupData {
     final j = jsonDecode(source);
     if (j is! Map<String, dynamic> ||
         j['format'] != 'warm-calendar' ||
-        ![1, 2, 3, 4].contains(j['version']) ||
+        ![1, 2, 3, 4, 5].contains(j['version']) ||
         j['events'] is! List ||
         j['settings'] is! Map<String, dynamic>) {
       throw const FormatException('请选择本应用导出的 JSON 备份');

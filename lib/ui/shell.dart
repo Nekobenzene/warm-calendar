@@ -382,7 +382,7 @@ class _AppShellState extends State<AppShell> {
                                         ?.copyWith(fontSize: narrow ? 20 : 24),
                                   ),
                                   const Spacer(),
-                                  if (_page < 4)
+                                  if (_page < 4 && !(narrow && _page == 0))
                                     FilledButton.icon(
                                       onPressed: c.loading || c.error != null
                                           ? null
@@ -404,6 +404,17 @@ class _AppShellState extends State<AppShell> {
                                             : '新建日程',
                                       ),
                                     ),
+                                  if (!narrow && _page < 3) ...[
+                                    const SizedBox(width: 8),
+                                    FilledButton.icon(
+                                      key: const ValueKey('desktop-new-todo'),
+                                      onPressed: c.loading || c.error != null
+                                          ? null
+                                          : () => openTodoEditor(context, c),
+                                      icon: const Icon(Icons.add, size: 18),
+                                      label: const Text('新建待办'),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -472,6 +483,12 @@ class _AppShellState extends State<AppShell> {
                                                       controller: c,
                                                       onCalendar: _openCalendar,
                                                       onTodo: _openTodo,
+                                                      onSchedules: () =>
+                                                          setState(() {
+                                                            _page = 2;
+                                                            _status = null;
+                                                            _filterRevision++;
+                                                          }),
                                                       onStatus: (status) =>
                                                           setState(() {
                                                             _status = status;

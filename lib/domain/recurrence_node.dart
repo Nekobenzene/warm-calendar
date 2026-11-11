@@ -2,6 +2,9 @@ part of 'models.dart';
 
 /// A stable identity is independent of its time and position in the editor.
 class RecurrenceNode {
+  // An unsaved paste token; never written to backups or synchronization data.
+  final String? pasteDraftId;
+  final ItemAutomation automation;
   final String id, title, notes;
   final int dayOffset, minute, durationMinutes, color, completedColor;
   final bool allDay, reminderSound;
@@ -10,6 +13,8 @@ class RecurrenceNode {
   final WeekendHolidayPriority weekendHolidayPriority;
   final int? legacyMinute;
   const RecurrenceNode({
+    this.pasteDraftId,
+    this.automation = const ItemAutomation(),
     required this.id,
     this.title = '',
     this.notes = '',
@@ -27,6 +32,7 @@ class RecurrenceNode {
   });
   bool get isPoint => !allDay && durationMinutes == 0;
   RecurrenceNode copyWith({
+    ItemAutomation? automation,
     String? id,
     String? title,
     String? notes,
@@ -34,6 +40,8 @@ class RecurrenceNode {
     int? minute,
     int? durationMinutes,
   }) => RecurrenceNode(
+    pasteDraftId: id == null || id == this.id ? pasteDraftId : null,
+    automation: automation ?? this.automation,
     id: id ?? this.id,
     title: title ?? this.title,
     notes: notes ?? this.notes,
@@ -78,6 +86,7 @@ class RecurrenceNode {
   }
 
   Map<String, dynamic> toJson() => {
+    'automation': automation.toJson(),
     'id': id,
     'title': title,
     'notes': notes,
@@ -94,6 +103,11 @@ class RecurrenceNode {
     if (legacyMinute != null) 'legacyMinute': legacyMinute,
   };
   factory RecurrenceNode.fromJson(Map<String, dynamic> j) => RecurrenceNode(
+    automation: ItemAutomation.fromJson(
+      j['automation'] == null
+          ? null
+          : Map<String, dynamic>.from(j['automation'] as Map),
+    ),
     id: j['id'] as String,
     title: j['title'] as String? ?? '',
     notes: j['notes'] as String? ?? '',
